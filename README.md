@@ -7,7 +7,7 @@ Activa o suspende pantallas de clientes según su pago, con Supabase.
 | Archivo | Para qué sirve |
 |---|---|
 | `supabase/licenses.sql` | Tablas, políticas de seguridad y la función `check_license`. Se ejecuta una vez en Supabase. |
-| `supabase/pairing.sql` | Vinculación por código corto para Smart TV (`request_pairing`, `poll_pairing`, `link_pairing`). Se ejecuta después de `licenses.sql`. |
+| `supabase/requests.sql` | Peticiones de activación (botón «Enviar petición» + aceptar con nombre y duración). Se ejecuta después de `licenses.sql`. |
 | `src/lib/supabaseClient.js` | Cliente de Supabase (lee las variables de entorno). |
 | `src/license/licenseService.js` | Toda la comunicación con Supabase y utilidades (fechas, claves). Sin React. |
 | `src/license/useLicenseCheck.js` | Hook que consulta la licencia, repite la consulta y decide qué hacer sin internet. |
@@ -19,7 +19,7 @@ Activa o suspende pantallas de clientes según su pago, con Supabase.
 ## Instalación (10 minutos)
 
 1. **Supabase**: crea un proyecto en supabase.com (el plan gratuito basta).
-2. **Base de datos**: en *SQL Editor* pega y ejecuta `supabase/licenses.sql` y después `supabase/pairing.sql`.
+2. **Base de datos**: en *SQL Editor* pega y ejecuta `supabase/licenses.sql` y después `supabase/requests.sql`.
 3. **Tu usuario administrador**:
    - *Authentication > Users > Add user* (tu correo y una contraseña fuerte).
    - Copia el UUID del usuario.
@@ -37,20 +37,24 @@ Activa o suspende pantallas de clientes según su pago, con Supabase.
 
    | Dispositivo | Forma | Pasos |
    |---|---|---|
-   | **Smart TV** (recomendada) | **Código en pantalla** | Abre la pizarra en el navegador del TV. Muestra un código grande, por ejemplo `K7M-4QX`. En tu panel, en **Vincular una pantalla**, escribe el código, elige la agencia y pulsa **Vincular pantalla**. En unos 3 segundos el TV arranca solo. Nadie teclea claves con el control remoto. |
-   | **Computador, tablet o celular** | **Enlace de activación** | En la fila de la agencia pulsa **Copiar enlace** y envíaselo al cliente (WhatsApp, correo). Al abrirlo, la pantalla queda activada para siempre en ese navegador. |
+   | **Smart TV o cualquier navegador** (recomendada) | **Enviar petición** | El cliente abre la pizarra y pulsa **Enviar petición** (en el TV basta el botón OK del control remoto; puede escribir su nombre, es opcional). A ti te aparece en **Peticiones pendientes** con su referencia (`K7M-4QX`), el tipo de pantalla (Smart TV, celular, computador) y la hora. Escribes el **nombre de la agencia**, eliges la **duración** (7, 15, 30, 60, 90 días, sin vencimiento o una fecha) y pulsas **Aceptar y activar**. En unos 3 segundos la pantalla arranca sola. |
+   | Misma agencia, otro televisor | **Agencia existente** | En la petición elige la agencia en el selector: la pantalla usa su misma clave y fecha de corte. |
+   | Cliente lejos o sin pantalla a mano | **Enlace de activación** | En la fila de la agencia pulsa **Copiar enlace** y envíaselo por WhatsApp. Al abrirlo, la pantalla queda activada en ese navegador. |
    | Cualquiera | Clave escrita | Botón **Tengo una clave** en la pantalla de activación. |
 
-   Consejo para el TV: guarda la dirección de la pizarra como página de inicio o favorito del navegador del televisor. Así solo se escribe la dirección una vez.
+   Consejo para el TV: guarda la dirección de la pizarra como página de inicio o favorito del navegador del televisor, así la escribes una sola vez.
 3. Cuando el cliente no pague, apaga el **interruptor** de su fila. Su pantalla se bloquea sola en menos de un minuto.
 4. **+30 días** extiende la fecha de corte al registrar un pago.
 
-### Cómo funciona la vinculación por código
+### Cómo funcionan las peticiones
 
-- El código tiene 6 caracteres (sin 0/O ni 1/I), **dura 15 minutos** y **se usa una sola vez**. Si vence, la pantalla pide otro sola.
-- Solo un administrador puede vincular (`link_pairing` comprueba `is_admin()` dentro de la base de datos).
-- La pantalla nunca puede leer la tabla; solo puede pedir un código y preguntar por el suyo. Como máximo hay 500 códigos pendientes.
-- Si la pantalla ya tenía una clave inválida (`not_found`), también puede cambiar a "Vincular con código".
+- Cada pantalla genera un **token secreto** de 32 caracteres que guarda en su navegador. Con él pregunta por el estado de *su* petición y recibe *su* clave **una sola vez** (al entregarla, la petición se borra). Si el TV se apaga o se recarga, sigue esperando la misma petición.
+- El administrador no ve ese token: la lista solo muestra una referencia corta, el tipo de pantalla, la nota y la hora.
+- Solo un administrador puede ver la lista, aceptar o rechazar (las funciones comprueban `is_admin()` dentro de la base de datos).
+- La bandeja del panel se actualiza sola cada 10 segundos.
+- Las peticiones sin atender se borran a los 7 días y hay un tope de 200 pendientes.
+- Si la pantalla ya tenía una clave inválida (`not_found`), también puede cambiar a «Enviar petición».
+- Una petición no es una licencia: **nada se activa hasta que tú la aceptas**.
 
 ## Estructura de la tabla `licenses`
 
@@ -73,7 +77,7 @@ La tabla `admins` (`user_id`) lista quién puede administrar.
 
 | Quién | `licenses` | `admins` | `check_license(clave)` |
 |---|---|---|---|
-| Pantalla de cliente (`anon`) | Nada: ni leer ni escribir | Nada | **Sí**: solo recibe el veredicto de su propia clave. También `request_pairing` y `poll_pairing` (su propio código) |
+| Pantalla de cliente (`anon`) | Nada: ni leer ni escribir | Nada | **Sí**: solo recibe el veredicto de su propia clave. También `submit_activation_request` y `poll_activation_request` (su propia petición) |
 | Usuario con sesión que no es admin | Nada (ve 0 filas, no puede insertar) | Nada | Sí |
 | Administrador | Leer, crear, editar, borrar | Solo ve su propia fila | Sí |
 
@@ -101,6 +105,6 @@ Las horas de tolerancia (`graceHours`) y el intervalo de consulta (`pollMs`, 60 
 ## Pruebas realizadas
 
 - **SQL (PostgreSQL 16 real)**: veredictos active / suspended / expired / not_found, vence hoy, `anon` sin acceso a las tablas, usuario normal rechazado, administrador con acceso completo.
-- **Componentes (navegador real, Supabase simulado)**: 46 pruebas en total, entre ellas el bloqueo exacto a pantalla completa, la pizarra fuera del DOM, la tolerancia sin internet, el bloqueo y desbloqueo con la pizarra abierta, la activación por URL, y el toggle, creación, +30 días, borrado y reversión del panel.
-- **Vinculación por código**: SQL en PostgreSQL 16 real (código válido, un solo uso, vence a los 15 min, `anon` y usuario normal no pueden vincular, límite de 500, 200 códigos distintos, borrar agencia limpia sus vínculos) y 17 pruebas más de componentes (el TV muestra el código, arranca solo al vincular, pide otro si vence, avisa sin internet, cambia a clave manual; el panel vincula, muestra errores claros y copia el enlace).
+- **Componentes (navegador real, Supabase simulado)**: 62 pruebas en total, entre ellas el bloqueo exacto a pantalla completa, la pizarra fuera del DOM, la tolerancia sin internet, el bloqueo y desbloqueo con la pizarra abierta, la activación por URL, y el toggle, creación, +30 días, borrado y reversión del panel.
+- **Peticiones de activación**: SQL en PostgreSQL 16 real (enviar, reenviar sin duplicar, pendiente/aceptada/rechazada, la clave se entrega una sola vez y funciona en `check_license`, agencia existente sin crear otra, `anon` y usuario normal no pueden ver, aceptar ni rechazar, tope de 200, limpieza a los 7 días, migración desde la versión por código) y pruebas de componentes (el botón y el foco para el control remoto, no envía nada solo, recarga con petición guardada, rechazada, cancelar, sin internet al enviar y mientras espera; la bandeja con duración, fecha de corte exacta, agencia existente, rechazo en dos pasos y errores claros).
 - **No probado**: la conexión contra un proyecto de Supabase real (no tengo acceso a uno desde aquí). Tras el paso 3, prueba iniciar sesión en `#licencias` y crear una agencia.

@@ -19,8 +19,8 @@
 // =====================================================================
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  activationLink, addDays, createLicense, deleteLicense, effectiveState, fetchIsAdmin, formatCode, formatDate,
-  formatDateTime, linkPairing, listLicenses, normalizeCode, todayCaracas, updateLicense,
+  activationLink, addDays, approveRequest, createLicense, deleteLicense, describeDevice, effectiveState, fetchIsAdmin,
+  formatDate, formatDateTime, listLicenses, listRequests, rejectRequest, timeAgo, todayCaracas, updateLicense,
 } from './licenseService';
 import './license.css';
 
@@ -104,58 +104,102 @@ function CreateForm({ onCreate }) {
 }
 
 // ---------------------------------------------------------------------
-//  Vincular pantalla: el admin escribe el código que muestra el TV
+//  Peticiones pendientes: el cliente pulsó "Enviar petición" en su pantalla.
+//  El admin pone nombre y duración y la acepta; la pantalla arranca sola.
 // ---------------------------------------------------------------------
-const PAIR_ERRORS = {
-  not_found: 'Ese código no existe o ya venció. Revise el que muestra la pantalla (se renueva solo cada 15 minutos).',
-  already_linked: 'Ese código ya fue vinculado.',
+const DURATIONS = [7, 15, 30, 60, 90];
+const REQ_ERRORS = {
+  not_found: 'Esa petición ya no existe (el cliente pudo cancelarla). Actualice la lista.',
+  already_decided: 'Esa petición ya fue atendida.',
+  name_required: 'Escriba el nombre de la agencia.',
   license_not_found: 'Esa agencia ya no existe. Actualice la lista.',
 };
 
-function PairForm({ rows, onLink }) {
-  const [code, setCode] = useState('');
-  const [licenseId, setLicenseId] = useState('');
+function RequestCard({ req, licenses, onApprove, onReject }) {
+  const [existing, setExisting] = useState('');              // '' = agencia nueva
+  const [name, setName] = useState(req.note || '');           // lo que escribió el cliente, editable
+  const [days, setDays] = useState(30);                       // null = sin vencimiento
+  const [vence, setVence] = useState(() => addDays(todayCaracas(), 30));
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState(null);   // { ok: boolean, text: string }
-  const chosen = rows.some((r) => r.id === licenseId) ? licenseId : (rows[0]?.id || '');
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState('');
 
-  const submit = async (e) => {
-    e.preventDefault();
-    if (normalizeCode(code).length !== 6 || !chosen) return;
+  const pickDays = (d) => { setDays(d); setVence(d == null ? '' : addDays(todayCaracas(), d)); };
+  const isNew = !existing;
+
+  const accept = async () => {
     setBusy(true);
-    setMsg(null);
+    setError('');
     try {
-      const r = await onLink(code, chosen);
-      if (r.ok) { setMsg({ ok: true, text: `Listo: la pantalla se activará con ${r.agency_name} en unos segundos.` }); setCode(''); }
-      else setMsg({ ok: false, text: PAIR_ERRORS[r.reason] || 'No se pudo vincular.' });
-    } catch (err) {
-      setMsg({ ok: false, text: err.message });
-    }
+      const r = await onApprove(req.id, isNew ? { agency_name: name, vence_el: vence || null } : { license_id: existing });
+      if (!r.ok) setError(REQ_ERRORS[r.reason] || 'No se pudo aceptar.');
+    } catch (err) { setError(err.message); }
+    setBusy(false);
+  };
+  const reject = async () => {
+    if (!confirming) { setConfirming(true); setTimeout(() => setConfirming(false), 4000); return; }
+    setBusy(true);
+    try { await onReject(req.id); } catch (err) { setError(err.message); }
     setBusy(false);
   };
 
   return (
-    <form className="lic-card lic-pair-form" onSubmit={submit}>
-      <h2>Vincular una pantalla (Smart TV)</h2>
-      <p className="lic-muted">Abra la pizarra en el televisor: mostrará un código. Escríbalo aquí y elija la agencia. No hay que teclear nada en el TV.</p>
+    <article className="lic-req" aria-label={`Petición ${req.label}`}>
+      <div className="lic-req__top">
+        <span className="lic-req__label">{req.label}</span>
+        <span>{describeDevice(req.device)}</span>
+        <span className="lic-muted">{timeAgo(req.created_at)}</span>
+        {req.note ? <span className="lic-muted">Dice: «{req.note}»</span> : null}
+      </div>
       <div className="lic-grid">
-        <label>Código que muestra el TV
-          <input
-            type="text" className="lic-code-input" value={formatCode(code)} placeholder="K7M-4QX"
-            onChange={(e) => setCode(normalizeCode(e.target.value))}
-            autoComplete="off" spellCheck={false} maxLength={7} inputMode="text"
-          />
-        </label>
         <label>Agencia
-          <select value={chosen} onChange={(e) => setLicenseId(e.target.value)} disabled={rows.length === 0}>
-            {rows.length === 0 ? <option value="">Primero cree una agencia</option> : null}
-            {rows.map((r) => <option key={r.id} value={r.id}>{r.agency_name}</option>)}
+          <select value={existing} onChange={(e) => setExisting(e.target.value)} aria-label="Agencia de la petición">
+            <option value="">➕ Agencia nueva</option>
+            {licenses.map((l) => <option key={l.id} value={l.id}>{l.agency_name} (otra pantalla)</option>)}
           </select>
         </label>
+        {isNew ? (
+          <label>Nombre de la agencia
+            <input type="text" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder="Ej.: Agencia Centro" aria-label="Nombre de la agencia nueva" />
+          </label>
+        ) : null}
       </div>
-      {msg ? <p className={msg.ok ? 'lic-ok' : 'lic-error'} role={msg.ok ? 'status' : 'alert'}>{msg.text}</p> : null}
-      <button type="submit" className="lic-btn" disabled={busy || normalizeCode(code).length !== 6 || !chosen}>{busy ? 'Vinculando…' : 'Vincular pantalla'}</button>
-    </form>
+      {isNew ? (
+        <div>
+          <div className="lic-chips" role="group" aria-label="Duración">
+            <span className="lic-muted">Duración:</span>
+            {DURATIONS.map((d) => (
+              <button key={d} type="button" className={`lic-chip ${days === d ? 'is-on' : ''}`} aria-pressed={days === d} onClick={() => pickDays(d)}>{d} días</button>
+            ))}
+            <button type="button" className={`lic-chip ${days == null ? 'is-on' : ''}`} aria-pressed={days == null} onClick={() => pickDays(null)}>Sin vencimiento</button>
+            <input type="date" className="lic-date" value={vence} onChange={(e) => { setDays(-1); setVence(e.target.value); }} aria-label="Fecha de corte" />
+          </div>
+          <div className="lic-muted">{vence ? `Vence el ${formatDate(vence)} (hora de Caracas)` : 'No vencerá: la suspende usted con el interruptor.'}</div>
+        </div>
+      ) : <p className="lic-muted">Usará la misma clave y fecha de corte que esa agencia. Para cambiar la fecha use «+30 días» en la lista.</p>}
+      {error ? <p className="lic-error" role="alert">{error}</p> : null}
+      <div className="lic-req__actions">
+        <button type="button" className="lic-btn" onClick={accept} disabled={busy || (isNew && !name.trim())}>{busy ? 'Procesando…' : 'Aceptar y activar'}</button>
+        <button type="button" className={`lic-btn lic-btn--danger ${confirming ? 'is-armed' : ''}`} onClick={reject} disabled={busy}>{confirming ? '¿Seguro?' : 'Rechazar'}</button>
+      </div>
+    </article>
+  );
+}
+
+function RequestsInbox({ requests, licenses, error, notice, onApprove, onReject }) {
+  return (
+    <section className="lic-card lic-inbox" aria-label="Peticiones pendientes">
+      <div className="lic-inbox__head">
+        <h2>Peticiones pendientes {requests.length ? <span className="lic-badge lic-badge--expired">{requests.length}</span> : null}</h2>
+      </div>
+      {notice ? <p className="lic-ok" role="status">{notice}</p> : null}
+      {error ? <p className="lic-error" role="alert">{error}</p> : null}
+      {requests.length === 0 ? (
+        <p className="lic-muted">No hay peticiones. Cuando un cliente pulse «Enviar petición» en su pantalla, aparecerá aquí (esta lista se actualiza sola cada 10 segundos).</p>
+      ) : requests.map((r) => (
+        <RequestCard key={r.id} req={r} licenses={licenses} onApprove={onApprove} onReject={onReject} />
+      ))}
+    </section>
   );
 }
 
@@ -248,6 +292,9 @@ export default function AdminPanel({ supabase }) {
   const [session, setSession] = useState(undefined);   // undefined = cargando, null = sin sesión
   const [isAdmin, setIsAdmin] = useState(null);        // null = comprobando
   const [rows, setRows] = useState([]);
+  const [requests, setRequests] = useState([]);
+  const [reqError, setReqError] = useState('');
+  const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const today = todayCaracas();
@@ -278,7 +325,20 @@ export default function AdminPanel({ supabase }) {
     setLoading(false);
   }, [supabase]);
 
-  useEffect(() => { if (isAdmin) reload(); }, [isAdmin, reload]);
+  // Peticiones: se piden aparte para que, si aún no se ejecutó requests.sql, las licencias igual carguen.
+  const reloadRequests = useCallback(async () => {
+    try { setRequests(await listRequests(supabase)); setReqError(''); }
+    catch (err) { setReqError(`No se pudieron cargar las peticiones: ${err.message}. ¿Ya ejecutó supabase/requests.sql?`); }
+  }, [supabase]);
+
+  useEffect(() => { if (isAdmin) { reload(); reloadRequests(); } }, [isAdmin, reload, reloadRequests]);
+
+  // La bandeja se actualiza sola cada 10 s para ver las peticiones nuevas.
+  useEffect(() => {
+    if (!isAdmin) return undefined;
+    const t = setInterval(reloadRequests, 10_000);
+    return () => clearInterval(t);
+  }, [isAdmin, reloadRequests]);
 
   // --- Acciones ---
   const handleCreate = async (data) => {
@@ -299,8 +359,20 @@ export default function AdminPanel({ supabase }) {
     }
   };
 
-  // Vincular un TV: no cambia filas, solo avisa a la base de datos; la pantalla lo recoge sola.
-  const handleLink = (code, licenseId) => linkPairing(supabase, code, licenseId);
+  // Aceptar una petición: crea (o reutiliza) la licencia; la pantalla del cliente recoge su clave sola.
+  const handleApprove = async (id, data) => {
+    const r = await approveRequest(supabase, { id, ...data });
+    if (r.ok) {
+      setNotice(`Listo: ${r.agency_name} quedó activa${r.vence_el ? ` hasta el ${formatDate(r.vence_el)}` : ' sin fecha de corte'}. La pantalla arranca sola en unos segundos.`);
+      await Promise.all([reload(), reloadRequests()]);
+    }
+    return r;
+  };
+  const handleReject = async (id) => {
+    const r = await rejectRequest(supabase, id);
+    if (r.ok) { setNotice('Petición rechazada.'); }
+    await reloadRequests();
+  };
 
   const handleDelete = async (id) => {
     try {
@@ -338,7 +410,7 @@ export default function AdminPanel({ supabase }) {
       <header className="lic-admin__head">
         <h1>Licencias de agencias</h1>
         <div>
-          <button type="button" className="lic-btn lic-btn--ghost" onClick={reload} disabled={loading}>{loading ? 'Actualizando…' : 'Actualizar'}</button>
+          <button type="button" className="lic-btn lic-btn--ghost" onClick={() => { reload(); reloadRequests(); }} disabled={loading}>{loading ? 'Actualizando…' : 'Actualizar'}</button>
           <button type="button" className="lic-btn lic-btn--ghost" onClick={() => supabase.auth.signOut()}>Cerrar sesión</button>
         </div>
       </header>
@@ -351,7 +423,7 @@ export default function AdminPanel({ supabase }) {
 
       {error ? <p className="lic-error" role="alert">{error}</p> : null}
 
-      <PairForm rows={rows} onLink={handleLink} />
+      <RequestsInbox requests={requests} licenses={rows} error={reqError} notice={notice} onApprove={handleApprove} onReject={handleReject} />
 
       <CreateForm onCreate={handleCreate} />
 

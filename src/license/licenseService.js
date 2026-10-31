@@ -96,45 +96,95 @@ export function activationLink(key) {
 }
 
 // ---------------------------------------------------------------------
-//  Vinculación por código corto (ideal para Smart TV: no se teclea nada)
-//   1. La pantalla pide un código  -> requestPairing  -> 'K7M4QX'
-//   2. El admin lo escribe en su panel y elige agencia -> linkPairing
-//   3. La pantalla pregunta cada pocos segundos -> pollPairing -> recibe la clave
-//  Las funciones SQL están en supabase/pairing.sql.
+//  Peticiones de activación (nadie teclea claves)
+//   1. La pantalla pulsa "Enviar petición"  -> submitRequest
+//   2. El admin la ve en su panel y la acepta con nombre y duración -> approveRequest
+//   3. La pantalla pregunta cada pocos segundos -> pollRequest -> recibe su clave
+//  Las funciones SQL están en supabase/requests.sql.
+//  Cada pantalla tiene un token secreto (solo ella lo conoce) guardado en su navegador.
 // ---------------------------------------------------------------------
+const REQ_STORAGE = 'pizarra.license.request';
 
-/** Deja solo letras y números en mayúsculas, máximo 6: 'k7m-4qx' -> 'K7M4QX'. */
-export function normalizeCode(code) {
-  return String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+/** Token secreto largo y aleatorio de la pantalla (32 caracteres). */
+export function newRequestToken() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
+}
+export function readRequestToken() {
+  try { return localStorage.getItem(REQ_STORAGE) || ''; } catch { return ''; }
+}
+export function saveRequestToken(token) {
+  try { localStorage.setItem(REQ_STORAGE, token); } catch { /* sin almacenamiento: la petición se pierde al recargar */ }
+}
+export function clearRequestToken() {
+  try { localStorage.removeItem(REQ_STORAGE); } catch { /* nada */ }
 }
 
-/** 'K7M4QX' -> 'K7M-4QX' (más fácil de leer a distancia). */
-export function formatCode(code) {
-  const c = normalizeCode(code);
-  return c.length > 3 ? `${c.slice(0, 3)}-${c.slice(3)}` : c;
+/** Describe el tipo de pantalla a partir del navegador, para que el admin sepa de dónde viene. */
+export function describeDevice(ua) {
+  const u = String(ua || '');
+  if (/smart-?tv|tizen|web0s|webos|vidaa|hbbtv|bravia|googletv|android ?tv|aft[a-z]|netcast|roku|viera|opera tv/i.test(u)) return 'Smart TV';
+  if (/ipad|tablet/i.test(u)) return 'Tablet';
+  if (/iphone|android.+mobile|mobile/i.test(u)) return 'Celular';
+  if (/android/i.test(u)) return 'Tablet o TV Android';
+  if (/windows|macintosh|linux|cros/i.test(u)) return 'Computador';
+  return 'Dispositivo';
 }
 
-/** La pantalla pide un código nuevo (dura 15 minutos). Lanza error si no hay conexión. */
-export async function requestPairing(supabase) {
-  const { data, error } = await supabase.rpc('request_pairing');
-  if (error) throw new Error(error.message || 'No se pudo pedir el código');
-  if (typeof data !== 'string' || !data) throw new Error('Respuesta inválida del servidor');
+/** "hace 3 min" / "hace 2 h" / fecha, para la bandeja del admin. */
+export function timeAgo(iso, now = Date.now()) {
+  const sec = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1000));
+  if (sec < 60) return 'hace unos segundos';
+  if (sec < 3600) return `hace ${Math.round(sec / 60)} min`;
+  if (sec < 86400) return `hace ${Math.round(sec / 3600)} h`;
+  return formatDateTime(iso);
+}
+
+/** La pantalla envía su petición. Devuelve { status: 'pending'|'approved'|'rejected'|'invalid', label }. Lanza si no hay conexión. */
+export async function submitRequest(supabase, { token, note }) {
+  const { data, error } = await supabase.rpc('submit_activation_request', {
+    p_token: token, p_note: note?.trim() || null, p_device: String(navigator.userAgent || '').slice(0, 200),
+  });
+  if (error) throw new Error(error.message || 'No se pudo enviar la petición');
+  if (!data || typeof data.status !== 'string' || data.status === 'invalid') throw new Error('Respuesta inválida del servidor');
   return data;
 }
 
-/** La pantalla pregunta si ya la vincularon. Devuelve { status: 'waiting' | 'linked' | 'expired', license_key? }. */
-export async function pollPairing(supabase, code) {
-  const { data, error } = await supabase.rpc('poll_pairing', { p_code: code });
+/** La pantalla pregunta por su petición. { status: 'none'|'pending'|'rejected'|'approved', label?, license_key? }. */
+export async function pollRequest(supabase, token) {
+  const { data, error } = await supabase.rpc('poll_activation_request', { p_token: token });
   if (error) throw new Error(error.message || 'No se pudo consultar');
   if (!data || typeof data.status !== 'string') throw new Error('Respuesta inválida del servidor');
   return data;
 }
 
-/** (Admin) Vincula el código que muestra el TV con una agencia. Devuelve { ok, reason?, agency_name? }. */
-export async function linkPairing(supabase, code, licenseId) {
-  const { data, error } = await supabase.rpc('link_pairing', { p_code: normalizeCode(code), p_license_id: licenseId });
-  if (error) throw new Error(error.message || 'No se pudo vincular');
+/** (Admin) Peticiones pendientes, las más antiguas primero. No trae el token secreto. */
+export async function listRequests(supabase) {
+  return unwrap(await supabase.from('activation_requests').select('id,label,note,device,status,created_at').eq('status', 'pending').order('created_at', { ascending: true }));
+}
+
+/**
+ * (Admin) Acepta una petición.
+ *   Agencia nueva:    { id, agency_name, vence_el, notes }
+ *   Agencia existente: { id, license_id }   (otra pantalla de la misma agencia)
+ * Devuelve { ok, reason?, agency_name?, vence_el? }.
+ */
+export async function approveRequest(supabase, { id, agency_name, vence_el, notes, license_id }) {
+  const { data, error } = await supabase.rpc('approve_activation_request', {
+    p_request_id: id, p_agency_name: agency_name?.trim() || null, p_vence_el: vence_el || null,
+    p_notes: notes?.trim() || null, p_license_id: license_id || null,
+  });
+  if (error) throw new Error(error.message || 'No se pudo aceptar');
   return data || { ok: false, reason: 'not_found' };
+}
+
+/** (Admin) Rechaza una petición. */
+export async function rejectRequest(supabase, id) {
+  const { data, error } = await supabase.rpc('reject_activation_request', { p_request_id: id });
+  if (error) throw new Error(error.message || 'No se pudo rechazar');
+  return data || { ok: false };
 }
 
 // ---------------------------------------------------------------------
