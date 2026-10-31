@@ -1,0 +1,111 @@
+/* =====================================================================
+   license.css  -  estilos del bloqueo (LicenseGuard) y del panel (AdminPanel).
+   Todas las clases empiezan con "lic-" para no chocar con el resto de la app.
+   Cambia los colores en :root de abajo.
+   ===================================================================== */
+:root {
+  --lic-bg: #0e1613;
+  --lic-card: #16231e;
+  --lic-line: #2c3f38;
+  --lic-fg: #ebf1ec;
+  --lic-muted: #9bb0a5;
+  --lic-accent: #f2d16b;
+  --lic-accent-ink: #1b1606;
+  --lic-ok: #5fd38a;
+  --lic-warn: #f2b35f;
+  --lic-bad: #ff8f80;
+}
+
+/* ---------- Bloqueo a pantalla completa ---------- */
+.lic-lock {
+  position: fixed; inset: 0; z-index: 2147483647;   /* por encima de todo */
+  display: grid; place-items: center; padding: 24px;
+  background: var(--lic-bg); color: var(--lic-fg);
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+.lic-lock__box { max-width: 46rem; text-align: center; display: grid; gap: 14px; justify-items: center; }
+.lic-lock__icon { font-size: clamp(3rem, 8vw, 6rem); line-height: 1; }
+.lic-lock__title { margin: 0; font-size: clamp(1.6rem, 4vw, 3rem); line-height: 1.1; }
+.lic-lock__msg { margin: 0; font-size: clamp(1.15rem, 2.6vw, 2rem); line-height: 1.35; text-wrap: balance; }
+.lic-lock__detail { margin: 0; color: var(--lic-muted); font-size: clamp(1rem, 1.8vw, 1.4rem); }
+.lic-splash {
+  position: fixed; inset: 0; display: grid; place-items: center;
+  background: var(--lic-bg); color: var(--lic-muted); font-family: system-ui, sans-serif; font-size: 1.2rem;
+}
+.lic-offline {
+  position: fixed; right: 10px; bottom: 10px; z-index: 2147483000;
+  background: var(--lic-card); color: var(--lic-warn); border: 1px solid var(--lic-line);
+  border-radius: 8px; padding: 5px 10px; font: 500 12px system-ui, sans-serif; opacity: .85;
+}
+
+/* ---------- Formularios y botones (compartidos) ---------- */
+.lic-activate { display: grid; gap: 8px; width: min(26rem, 100%); text-align: left; }
+.lic-activate__error, .lic-error { color: var(--lic-bad); margin: 0; }
+.lic-admin input, .lic-activate input {
+  width: 100%; box-sizing: border-box; padding: 9px 11px; border-radius: 8px;
+  border: 1px solid var(--lic-line); background: #0e1613; color: var(--lic-fg); font: inherit;
+}
+.lic-btn {
+  cursor: pointer; border: 1px solid var(--lic-accent); background: var(--lic-accent); color: var(--lic-accent-ink);
+  border-radius: 8px; padding: 9px 14px; font: 600 14px system-ui, sans-serif;
+}
+.lic-btn:disabled { opacity: .55; cursor: not-allowed; }
+.lic-btn--ghost { background: transparent; color: var(--lic-fg); border-color: var(--lic-line); font-weight: 500; }
+.lic-btn--danger { background: transparent; color: var(--lic-bad); border-color: var(--lic-line); font-weight: 500; }
+.lic-btn--danger.is-armed { background: var(--lic-bad); color: #2a0a05; border-color: var(--lic-bad); font-weight: 700; }
+.lic-btn:focus-visible, .lic-switch:focus-visible, .lic-admin input:focus-visible { outline: 2px solid var(--lic-accent); outline-offset: 2px; }
+
+/* ---------- Panel de administración ---------- */
+.lic-admin {
+  /* Fondo a todo el ancho; el contenido se centra con un máximo de 1200 px (el padding lateral hace el centrado). */
+  min-height: 100vh; box-sizing: border-box; width: 100%;
+  padding: 20px max(16px, env(safe-area-inset-left, 0px), calc((100% - 1200px) / 2));
+  background: var(--lic-bg); color: var(--lic-fg); font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  display: grid; gap: 16px; align-content: start;
+}
+.lic-admin h1, .lic-admin h2 { margin: 0; }
+.lic-admin h1 { font-size: 1.6rem; }
+.lic-admin h2 { font-size: 1.1rem; }
+.lic-admin__head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.lic-admin__head > div { display: flex; gap: 8px; flex-wrap: wrap; }
+.lic-card { background: var(--lic-card); border: 1px solid var(--lic-line); border-radius: 12px; padding: 16px; display: grid; gap: 12px; }
+.lic-login { max-width: 24rem; margin: 10vh auto 0; }
+.lic-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); }
+.lic-grid label, .lic-login label { display: grid; gap: 4px; font-size: .85rem; color: var(--lic-muted); }
+.lic-muted { color: var(--lic-muted); font-size: .85rem; }
+.lic-stats { margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+
+.lic-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: .78rem; font-weight: 600; border: 1px solid currentColor; }
+.lic-badge--active { color: var(--lic-ok); }
+.lic-badge--suspended { color: var(--lic-bad); }
+.lic-badge--expired { color: var(--lic-warn); }
+
+/* Interruptor activo / suspendido */
+.lic-switch {
+  position: relative; width: 46px; height: 26px; border-radius: 999px; border: 1px solid var(--lic-line);
+  background: #3a2a27; cursor: pointer; padding: 0; margin-right: 8px; vertical-align: middle; transition: background .15s;
+}
+.lic-switch.is-on { background: #1f5a3a; }
+.lic-switch__knob { position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: var(--lic-fg); transition: transform .15s; }
+.lic-switch.is-on .lic-switch__knob { transform: translateX(20px); }
+
+/* Tabla */
+.lic-table-wrap { overflow-x: auto; padding: 0; }
+.lic-table { width: 100%; border-collapse: collapse; min-width: 52rem; }
+.lic-table th, .lic-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--lic-line); vertical-align: middle; font-size: .9rem; }
+.lic-table th { color: var(--lic-muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; }
+.lic-key { font: 500 .82rem ui-monospace, Menlo, monospace; margin-right: 6px; user-select: all; }
+.lic-date { width: auto !important; }
+.lic-actions { white-space: nowrap; }
+.lic-actions .lic-btn { margin-right: 6px; }
+.lic-row--suspended td:first-child strong, .lic-row--expired td:first-child strong { opacity: .75; }
+
+/* En pantallas angostas la tabla se vuelve una lista de tarjetas */
+@media (max-width: 720px) {
+  .lic-table { min-width: 0; }
+  .lic-table thead { display: none; }
+  .lic-table, .lic-table tbody, .lic-table tr, .lic-table td { display: block; width: 100%; box-sizing: border-box; }
+  .lic-table tr { padding: 10px 4px; border-bottom: 1px solid var(--lic-line); }
+  .lic-table td { border: 0; padding: 5px 12px; }
+  .lic-table td::before { content: attr(data-label); display: block; color: var(--lic-muted); font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; }
+}
