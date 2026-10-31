@@ -89,6 +89,54 @@ export function saveLicenseKey(key) {
   try { localStorage.setItem(KEY_STORAGE, normalizeKey(key)); } catch { /* modo privado: se pierde al cerrar */ }
 }
 
+/** Enlace de activación para navegadores: al abrirlo, la pantalla guarda la clave sola. */
+export function activationLink(key) {
+  const base = window.location.origin + window.location.pathname;
+  return `${base}?licencia=${encodeURIComponent(key)}`;
+}
+
+// ---------------------------------------------------------------------
+//  Vinculación por código corto (ideal para Smart TV: no se teclea nada)
+//   1. La pantalla pide un código  -> requestPairing  -> 'K7M4QX'
+//   2. El admin lo escribe en su panel y elige agencia -> linkPairing
+//   3. La pantalla pregunta cada pocos segundos -> pollPairing -> recibe la clave
+//  Las funciones SQL están en supabase/pairing.sql.
+// ---------------------------------------------------------------------
+
+/** Deja solo letras y números en mayúsculas, máximo 6: 'k7m-4qx' -> 'K7M4QX'. */
+export function normalizeCode(code) {
+  return String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+}
+
+/** 'K7M4QX' -> 'K7M-4QX' (más fácil de leer a distancia). */
+export function formatCode(code) {
+  const c = normalizeCode(code);
+  return c.length > 3 ? `${c.slice(0, 3)}-${c.slice(3)}` : c;
+}
+
+/** La pantalla pide un código nuevo (dura 15 minutos). Lanza error si no hay conexión. */
+export async function requestPairing(supabase) {
+  const { data, error } = await supabase.rpc('request_pairing');
+  if (error) throw new Error(error.message || 'No se pudo pedir el código');
+  if (typeof data !== 'string' || !data) throw new Error('Respuesta inválida del servidor');
+  return data;
+}
+
+/** La pantalla pregunta si ya la vincularon. Devuelve { status: 'waiting' | 'linked' | 'expired', license_key? }. */
+export async function pollPairing(supabase, code) {
+  const { data, error } = await supabase.rpc('poll_pairing', { p_code: code });
+  if (error) throw new Error(error.message || 'No se pudo consultar');
+  if (!data || typeof data.status !== 'string') throw new Error('Respuesta inválida del servidor');
+  return data;
+}
+
+/** (Admin) Vincula el código que muestra el TV con una agencia. Devuelve { ok, reason?, agency_name? }. */
+export async function linkPairing(supabase, code, licenseId) {
+  const { data, error } = await supabase.rpc('link_pairing', { p_code: normalizeCode(code), p_license_id: licenseId });
+  if (error) throw new Error(error.message || 'No se pudo vincular');
+  return data || { ok: false, reason: 'not_found' };
+}
+
 // ---------------------------------------------------------------------
 //  Verificación (lo que usa la pizarra del cliente)
 // ---------------------------------------------------------------------

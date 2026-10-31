@@ -19,8 +19,8 @@
 // =====================================================================
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  addDays, createLicense, deleteLicense, effectiveState, fetchIsAdmin, formatDate,
-  formatDateTime, listLicenses, todayCaracas, updateLicense,
+  activationLink, addDays, createLicense, deleteLicense, effectiveState, fetchIsAdmin, formatCode, formatDate,
+  formatDateTime, linkPairing, listLicenses, normalizeCode, todayCaracas, updateLicense,
 } from './licenseService';
 import './license.css';
 
@@ -104,6 +104,62 @@ function CreateForm({ onCreate }) {
 }
 
 // ---------------------------------------------------------------------
+//  Vincular pantalla: el admin escribe el código que muestra el TV
+// ---------------------------------------------------------------------
+const PAIR_ERRORS = {
+  not_found: 'Ese código no existe o ya venció. Revise el que muestra la pantalla (se renueva solo cada 15 minutos).',
+  already_linked: 'Ese código ya fue vinculado.',
+  license_not_found: 'Esa agencia ya no existe. Actualice la lista.',
+};
+
+function PairForm({ rows, onLink }) {
+  const [code, setCode] = useState('');
+  const [licenseId, setLicenseId] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);   // { ok: boolean, text: string }
+  const chosen = rows.some((r) => r.id === licenseId) ? licenseId : (rows[0]?.id || '');
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (normalizeCode(code).length !== 6 || !chosen) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await onLink(code, chosen);
+      if (r.ok) { setMsg({ ok: true, text: `Listo: la pantalla se activará con ${r.agency_name} en unos segundos.` }); setCode(''); }
+      else setMsg({ ok: false, text: PAIR_ERRORS[r.reason] || 'No se pudo vincular.' });
+    } catch (err) {
+      setMsg({ ok: false, text: err.message });
+    }
+    setBusy(false);
+  };
+
+  return (
+    <form className="lic-card lic-pair-form" onSubmit={submit}>
+      <h2>Vincular una pantalla (Smart TV)</h2>
+      <p className="lic-muted">Abra la pizarra en el televisor: mostrará un código. Escríbalo aquí y elija la agencia. No hay que teclear nada en el TV.</p>
+      <div className="lic-grid">
+        <label>Código que muestra el TV
+          <input
+            type="text" className="lic-code-input" value={formatCode(code)} placeholder="K7M-4QX"
+            onChange={(e) => setCode(normalizeCode(e.target.value))}
+            autoComplete="off" spellCheck={false} maxLength={7} inputMode="text"
+          />
+        </label>
+        <label>Agencia
+          <select value={chosen} onChange={(e) => setLicenseId(e.target.value)} disabled={rows.length === 0}>
+            {rows.length === 0 ? <option value="">Primero cree una agencia</option> : null}
+            {rows.map((r) => <option key={r.id} value={r.id}>{r.agency_name}</option>)}
+          </select>
+        </label>
+      </div>
+      {msg ? <p className={msg.ok ? 'lic-ok' : 'lic-error'} role={msg.ok ? 'status' : 'alert'}>{msg.text}</p> : null}
+      <button type="submit" className="lic-btn" disabled={busy || normalizeCode(code).length !== 6 || !chosen}>{busy ? 'Vinculando…' : 'Vincular pantalla'}</button>
+    </form>
+  );
+}
+
+// ---------------------------------------------------------------------
 //  Una fila de la tabla (una agencia)
 // ---------------------------------------------------------------------
 function LicenseRow({ lic, today, onPatch, onDelete }) {
@@ -112,13 +168,16 @@ function LicenseRow({ lic, today, onPatch, onDelete }) {
   const state = effectiveState(lic, today);
   const isOn = lic.status === 'active';
 
-  const copyKey = async () => {
+  const [copiedLink, setCopiedLink] = useState(false);
+  const copy = async (text, flag) => {
     try {
-      await navigator.clipboard.writeText(lic.license_key);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      await navigator.clipboard.writeText(text);
+      flag(true);
+      setTimeout(() => flag(false), 1500);
     } catch { /* si el navegador no deja copiar, la clave ya está visible para seleccionarla */ }
   };
+  const copyKey = () => copy(lic.license_key, setCopied);
+  const copyLink = () => copy(activationLink(lic.license_key), setCopiedLink);   // para navegadores: se abre y queda activada
 
   // Extender: suma 30 días desde la fecha de corte actual (o desde hoy si ya pasó o no tiene).
   const extend30 = () => {
@@ -145,6 +204,7 @@ function LicenseRow({ lic, today, onPatch, onDelete }) {
       <td data-label="Clave">
         <code className="lic-key">{lic.license_key}</code>
         <button type="button" className="lic-btn lic-btn--ghost" onClick={copyKey}>{copied ? 'Copiada' : 'Copiar'}</button>
+        <button type="button" className="lic-btn lic-btn--ghost" onClick={copyLink} title="Enlace que activa la pantalla al abrirlo (para navegadores)">{copiedLink ? 'Copiado' : 'Copiar enlace'}</button>
       </td>
       <td data-label="Estado">
         {/* Interruptor activo / suspendido: un clic. */}
@@ -239,6 +299,9 @@ export default function AdminPanel({ supabase }) {
     }
   };
 
+  // Vincular un TV: no cambia filas, solo avisa a la base de datos; la pantalla lo recoge sola.
+  const handleLink = (code, licenseId) => linkPairing(supabase, code, licenseId);
+
   const handleDelete = async (id) => {
     try {
       await deleteLicense(supabase, id);
@@ -287,6 +350,8 @@ export default function AdminPanel({ supabase }) {
       </p>
 
       {error ? <p className="lic-error" role="alert">{error}</p> : null}
+
+      <PairForm rows={rows} onLink={handleLink} />
 
       <CreateForm onCreate={handleCreate} />
 

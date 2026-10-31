@@ -11,9 +11,11 @@
 //      <Pizarra />            // tu pizarra tal cual, sin cambios
 //    </LicenseGuard>
 // =====================================================================
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useLicenseCheck } from './useLicenseCheck';
-import { resolveLicenseKey, saveLicenseKey, normalizeKey, formatDate } from './licenseService';
+import {
+  resolveLicenseKey, saveLicenseKey, normalizeKey, formatDate, formatCode, requestPairing, pollPairing,
+} from './licenseService';
 import './license.css';
 
 // Texto exacto pedido para el bloqueo. Cámbialo aquí si quieres otro.
@@ -63,30 +65,95 @@ function ActivationForm({ onSubmit, error }) {
 }
 
 /**
+ * Código de vinculación en grande. La pantalla lo pide sola, lo muestra y pregunta cada
+ * pocos segundos si el administrador ya lo vinculó; al lograrlo entrega la clave (onLinked).
+ * Si el código vence (15 min), pide otro sin que nadie toque nada.
+ */
+function PairingCode({ supabase, onLinked, pollMs = 3000 }) {
+  const [code, setCode] = useState('');
+  const [offline, setOffline] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    let timer;
+    let current = '';
+    const fresh = async () => {
+      try { current = await requestPairing(supabase); if (alive) { setCode(current); setOffline(false); } }
+      catch { current = ''; if (alive) { setCode(''); setOffline(true); } }
+    };
+    const tick = async () => {
+      if (!alive) return;
+      if (!current) await fresh();
+      else {
+        try {
+          const r = await pollPairing(supabase, current);
+          if (!alive) return;
+          if (r.status === 'linked' && r.license_key) { onLinked(r.license_key); return; }
+          if (r.status === 'expired') { current = ''; await fresh(); }
+          else setOffline(false);
+        } catch { if (alive) setOffline(true); }
+      }
+      if (alive) timer = setTimeout(tick, pollMs);
+    };
+    tick();
+    return () => { alive = false; clearTimeout(timer); };
+  }, [supabase, onLinked, pollMs]);
+
+  return (
+    <div className="lic-pair" role="status" aria-live="polite">
+      <div className="lic-pair__code" aria-label={code ? `Código ${code.split('').join(' ')}` : 'Generando código'}>
+        {code ? formatCode(code) : '···-···'}
+      </div>
+      <p className="lic-lock__detail">
+        {offline ? 'Sin conexión a internet. Reintentando…' : 'Esta pantalla se activará sola cuando su proveedor ingrese este código.'}
+      </p>
+    </div>
+  );
+}
+
+/** Pantalla de activación: por código (recomendado, sin teclear) o escribiendo la clave. */
+function ActivationScreen({ supabase, onActivate, pairPollMs, title, message, error, startManual = false }) {
+  const [manual, setManual] = useState(startManual);
+  return (
+    <LockScreen title={title} message={manual ? 'Escriba la clave de licencia que le entregó su proveedor.' : message}>
+      {manual ? <ActivationForm onSubmit={onActivate} error={error} /> : <PairingCode supabase={supabase} onLinked={onActivate} pollMs={pairPollMs} />}
+      <button type="button" className="lic-btn lic-btn--ghost" onClick={() => setManual((m) => !m)}>
+        {manual ? 'Vincular con código' : 'Tengo una clave'}
+      </button>
+    </LockScreen>
+  );
+}
+
+/**
  * @param {object} props
  * @param {object} props.supabase      Cliente de Supabase.
  * @param {string} [props.licenseKey]  Clave fija (opcional). Si no se da, se toma de
  *                                     ?licencia=... o de la que quedó guardada en el dispositivo.
  * @param {number} [props.pollMs]      Cada cuánto se vuelve a consultar (60 000 ms por defecto).
  * @param {number} [props.graceHours]  Horas de tolerancia sin internet (72 por defecto).
+ * @param {number} [props.pairPollMs]  Cada cuánto la pantalla pregunta si ya la vincularon (3000 ms).
  * @param {React.ReactNode} props.children  La pizarra.
  */
-export default function LicenseGuard({ supabase, licenseKey, pollMs, graceHours, children }) {
+export default function LicenseGuard({ supabase, licenseKey, pollMs, graceHours, pairPollMs, children }) {
   // La clave puede venir por prop, por la dirección o por lo guardado; si no hay, se pide.
   const [key, setKey] = useState(() => normalizeKey(licenseKey) || resolveLicenseKey());
   const lic = useLicenseCheck({ supabase, licenseKey: key, pollMs, graceHours });
 
-  const activate = (value) => {
+  const activate = useCallback((value) => {
     saveLicenseKey(value);
     setKey(normalizeKey(value));
-  };
+  }, []);
 
-  // 1) Pantalla sin clave: pedirla.
+  // 1) Pantalla sin clave: muestra un código para que el proveedor la vincule (o permite teclear la clave).
   if (lic.status === 'no_key') {
     return (
-      <LockScreen title="Pantalla sin activar" message="Escriba la clave de licencia que le entregó su proveedor.">
-        <ActivationForm onSubmit={activate} />
-      </LockScreen>
+      <ActivationScreen
+        supabase={supabase}
+        onActivate={activate}
+        pairPollMs={pairPollMs}
+        title="Pantalla sin activar"
+        message="Pida a su proveedor que vincule esta pantalla con este código:"
+      />
     );
   }
 
@@ -99,9 +166,15 @@ export default function LicenseGuard({ supabase, licenseKey, pollMs, graceHours,
   if (lic.status === 'blocked') {
     if (lic.reason === 'not_found') {
       return (
-        <LockScreen title="Licencia no válida" message="La clave no existe o fue eliminada. Contacte al proveedor.">
-          <ActivationForm onSubmit={activate} error="Verifique la clave e inténtelo de nuevo." />
-        </LockScreen>
+        <ActivationScreen
+          supabase={supabase}
+          onActivate={activate}
+          pairPollMs={pairPollMs}
+          title="Licencia no válida"
+          message="La clave no existe o fue eliminada. Pida a su proveedor que vincule esta pantalla con este código:"
+          error="Verifique la clave e inténtelo de nuevo."
+          startManual
+        />
       );
     }
     return (
