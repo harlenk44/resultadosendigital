@@ -410,6 +410,7 @@ export default function AdminPanel({ supabase }) {
       <header className="lic-admin__head">
         <h1>Licencias de agencias</h1>
         <div>
+          <a className="lic-btn lic-btn--ghost" href="#pizarra-admin">Abrir pizarra (cargar resultados)</a>
           <button type="button" className="lic-btn lic-btn--ghost" onClick={() => { reload(); reloadRequests(); }} disabled={loading}>{loading ? 'Actualizando…' : 'Actualizar'}</button>
           <button type="button" className="lic-btn lic-btn--ghost" onClick={() => supabase.auth.signOut()}>Cerrar sesión</button>
         </div>

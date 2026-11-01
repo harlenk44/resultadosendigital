@@ -17,7 +17,7 @@ Archivos:
 | Archivo | Para qué |
 |---|---|
 | `supabase/publicidad.sql` | Tabla, seguridad, Realtime y bucket |
-| `src/publicidad/PublicidadPopup.jsx` | El pop-up (React + Tailwind) |
+| `src/publicidad/PublicidadPopup.jsx` | El pop-up (React, sin Tailwind) |
 | `supabase/functions/publicidad-webhook/index.ts` | El webhook que recibe la foto |
 
 ---
@@ -45,7 +45,7 @@ Comprobar: Storage debe mostrar `publicidad` con la etiqueta **Public**, y Datab
 
 ## 2. El componente `PublicidadPopup.jsx`
 
-Copia `src/publicidad/PublicidadPopup.jsx` a tu proyecto (usa `src/lib/supabaseClient.js`, el mismo
+En el proyecto unido ya está conectado (lo monta `PizarraFrame`). Si lo usas aparte, copia `src/publicidad/` a tu proyecto (usa `src/lib/supabaseClient.js`, el mismo
 cliente del sistema de licencias; si el tuyo está en otra ruta, cambia la línea `import { supabase } ...`).
 
 - Lee los anuncios con `activo = true` y escucha cambios en tiempo real (más una consulta de respaldo cada 2 min).
@@ -54,7 +54,8 @@ cliente del sistema de licencias; si el tuyo está en otra ruta, cambia la líne
 - Con varias imágenes activas rota una por una (la más antigua primero). Cada imagen usa su propia duración e intervalo.
 - Fondo oscuro semitransparente (`bg-black/70`), centrada, `z-50`. Un clic sobre el fondo la cierra antes de tiempo.
 - Solo acepta URLs `http(s)`.
-- Requiere **Tailwind CSS** en el proyecto.
+- **No necesita Tailwind**: sus estilos están en `src/publicidad/publicidad.css`.
+- Un cartel **recién enviado** no espera al siguiente ciclo: sale a los pocos segundos y luego sigue la rotación normal.
 
 ## 3. El webhook (Edge Function)
 
@@ -121,15 +122,11 @@ Se valida el tipo **real** de la imagen (JPG, PNG, WEBP o GIF, máx. 5 MB). SVG 
 > Importante: no probé estos puentes con un WhatsApp real. El webhook sí está probado con los formatos
 > de arriba; si tu puente envía otra estructura, dime cómo llega y lo adapto.
 
-## 4. Integración mínima
+## 4. Integración
 
-En tu archivo principal (por ejemplo `src/App.jsx`):
+En el proyecto unido **no tienes que hacer nada**: `PizarraFrame` ya incluye `<PublicidadPopup />`, así que el pop-up sale en todas las pantallas de las agencias (y en la tuya) y también en pantalla completa.
 
-```jsx
-import PublicidadPopup from './publicidad/PublicidadPopup';
-```
-
-y, dentro del `return`, **una sola línea** (en cualquier parte, queda superpuesta):
+Si algún día lo quieres en otra aplicación React, copia `src/publicidad/` y agrega una sola línea dentro del `return`, en cualquier parte (queda superpuesta):
 
 ```jsx
 <PublicidadPopup />

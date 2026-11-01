@@ -1,0 +1,1321 @@
+<title>Pizarra Animaltec</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=JetBrains+Mono:wght@500;700&family=Schibsted+Grotesk:wght@400;500;700&display=swap">
+<style>
+/* Layout concept: a slate chalkboard. Header with a live Caracas clock, a control bar,
+   then the board itself: one chalk colour per lottery, times down the side, results as chalked cells. */
+:root {
+  --font-display: 'Bungee', Impact, 'Arial Black', sans-serif;
+  --font-body: 'Schibsted Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  --bg: #0e1613;
+  --board: #14201c;
+  --raise: #1b2b26;
+  --line: #2c3f38;
+  --fg: #ebf1ec;
+  --muted: #9bb0a5;
+  --now: #f2d16b;
+  --now-ink: #1b1606;
+  --warn: #ffb4a8;
+  --chalk-s: 70%;
+  --chalk-l: 68%;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #edf1ee; --board: #ffffff; --raise: #f2f6f3; --line: #d2dbd5; --fg: #13201b;
+    --muted: #55675e; --now: #a56d00; --now-ink: #ffffff; --warn: #a3321f;
+    --chalk-s: 62%; --chalk-l: 38%; color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #edf1ee; --board: #ffffff; --raise: #f2f6f3; --line: #d2dbd5; --fg: #13201b;
+  --muted: #55675e; --now: #a56d00; --now-ink: #ffffff; --warn: #a3321f;
+  --chalk-s: 62%; --chalk-l: 38%; color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  padding-block: 16px 28px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--now); outline-offset: 2px; }
+
+.app { max-width: 1800px; margin-inline: auto; display: grid; gap: 14px; }
+
+/* Header */
+.top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 10px 24px; }
+.brand { min-width: 0; }
+h1 { margin: 0; font: 400 clamp(1.7rem, 4.6vw, 2.7rem)/1 var(--font-display); letter-spacing: .01em; text-wrap: balance; }
+.brand p { margin: 6px 0 0; color: var(--muted); font-size: .95rem; }
+.clock { text-align: right; }
+.clock b { display: block; font: 400 clamp(1.5rem, 4vw, 2.2rem)/1 var(--font-display); font-variant-numeric: tabular-nums; color: var(--now); }
+.clock span { color: var(--muted); font-size: .85rem; text-transform: capitalize; }
+
+/* Controls */
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { background: transparent; border: 0; padding: 9px 16px; font-weight: 700; }
+.seg button[aria-pressed="true"] { background: var(--now); color: var(--now-ink); }
+.datenav { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.btn { background: var(--raise); border: 1px solid var(--line); border-radius: 8px; padding: 9px 13px; font-weight: 500; }
+.btn:hover { border-color: var(--muted); }
+.btn.icon { padding-inline: 11px; min-width: 40px; }
+.btn.primary { background: var(--now); color: var(--now-ink); border-color: var(--now); font-weight: 700; }
+input[type="date"], input[type="search"], select {
+  background: var(--raise); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+}
+.spacer { flex: 1 1 0; }
+.zoom { display: inline-flex; gap: 4px; }
+
+.note { margin: 0; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--raise); color: var(--muted); font-size: .9rem; }
+.note.warn { color: var(--warn); border-color: var(--warn); }
+.note[hidden] { display: none; }
+.live { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: .85rem; }
+.live i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.live.on i { background: #5fd38a; }
+
+/* Board */
+.board { font-size: calc(14px * var(--zoom, 1)); background: var(--board); border: 1px solid var(--line); border-radius: 12px; padding: 1.1em; display: grid; gap: 1.1em; min-width: 0; }
+.board h2 { margin: 0; font: 400 1.05em/1.1 var(--font-display); letter-spacing: .02em; }
+.datehead { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .4em 1em; }
+.datehead h2 { font-size: 1.35em; text-transform: capitalize; }
+.datehead span { color: var(--muted); font-size: .9em; }
+
+.c { --c: var(--cc, hsl(var(--h) var(--chalk-s) var(--chalk-l))); }
+
+.strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(11em, 1fr)); gap: .6em; }
+.card { border: 1px solid color-mix(in srgb, var(--c) 45%, var(--line)); border-radius: 10px; padding: .7em .8em; display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: .7em; row-gap: .1em; background: color-mix(in srgb, var(--c) 9%, var(--board)); min-width: 0; }
+.card .lot { grid-column: 1 / -1; font-size: .72em; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--c); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .emo { font-size: 2.1em; line-height: 1; }
+.card .txt { min-width: 0; }
+.card .num { font: 400 calc(1.7em * var(--ns, 1))/1 var(--font-display); color: var(--c); }
+.card .nm { font-size: calc(.88em * var(--nn, 1)); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .tm { grid-column: 1 / -1; margin-top: .25em; font: 500 .72em var(--font-mono); color: var(--muted); }
+.card.empty { background: transparent; border-style: dashed; }
+.card.empty .emo { opacity: .35; filter: grayscale(1); }
+.card.empty .nm { color: var(--muted); font-weight: 500; }
+
+.scroller { overflow-x: auto; padding-bottom: .3em; }
+.grid { display: grid; gap: .4em; min-width: max-content; }
+.grid.day { grid-template-columns: 5.4em repeat(8, minmax(7.4em, 1fr)); }
+.grid.week { grid-template-columns: 5.4em repeat(7, minmax(6.4em, 1fr)); }
+.hcell { font-size: .74em; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; text-align: center; padding: .5em .3em; color: var(--c); border-bottom: 2px solid var(--c); line-height: 1.2; text-wrap: balance; }
+.hcell.dim { color: var(--muted); border-bottom-color: var(--line); }
+.hcell.today { color: var(--now); border-bottom-color: var(--now); }
+.hcell small { display: block; font: 400 1.9em/1.1 var(--font-display); letter-spacing: 0; margin-top: .1em; }
+.corner { position: sticky; left: 0; background: var(--board); z-index: 1; }
+.tcell { position: sticky; left: 0; z-index: 1; background: var(--board); display: flex; align-items: center; justify-content: flex-start; font: 500 .8em var(--font-mono); color: var(--muted); padding-right: .4em; white-space: nowrap; }
+.tcell.now { color: var(--now); font-weight: 700; }
+.tcell.now::before { content: ""; width: .5em; height: .5em; border-radius: 50%; background: var(--now); margin-right: .45em; flex: none; }
+
+.cell { display: grid; justify-items: center; align-content: center; gap: .1em; min-height: 4.7em; background: transparent; border: 1px dashed var(--line); border-radius: 8px; padding: .35em .2em; color: var(--muted); min-width: 0; }
+.cell.rowNow { border-color: color-mix(in srgb, var(--now) 60%, var(--line)); }
+.cell.future { opacity: .55; }
+.cell.has { border: 1px solid color-mix(in srgb, var(--c) 55%, var(--line)); background: color-mix(in srgb, var(--c) 14%, var(--board)); color: var(--fg); }
+.cell .emo { font-size: 1.5em; line-height: 1; }
+.cell .num { font: 400 calc(1.2em * var(--ns, 1))/1 var(--font-display); color: var(--c); }
+.cell .nm { font-size: calc(.72em * var(--nn, 1)); font-weight: 500; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cell .dash { font-size: 1.1em; }
+.grid.week .cell { min-height: 3.9em; }
+.grid.week .cell .nm { display: none; }
+button.cell:hover { border-color: var(--c); }
+div.cell { cursor: default; }
+.cell.off { border: 0; background: transparent; }
+.schedrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(9em, 1fr)); gap: 8px 12px; align-items: end; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.schedrow b { grid-column: 1 / -1; color: var(--c); font-size: .9rem; }
+.schedrow label { display: grid; gap: 4px; font-size: .8rem; color: var(--muted); }
+
+.chips { display: flex; flex-wrap: wrap; gap: .45em; }
+.chip { background: transparent; border: 1px solid color-mix(in srgb, var(--c) 50%, var(--line)); color: var(--fg); border-radius: 999px; padding: .4em .9em; font-size: .85em; font-weight: 500; }
+.chip[aria-pressed="true"] { background: var(--c); border-color: var(--c); color: var(--board); font-weight: 700; }
+
+.freq { display: grid; gap: .5em; }
+.freq ol { list-style: none; margin: 0; padding: 0; display: grid; gap: .4em; grid-template-columns: repeat(auto-fill, minmax(15em, 1fr)); }
+.freq li { display: grid; grid-template-columns: 2em 3em 1fr auto; align-items: center; gap: .5em; background: var(--raise); border-radius: 8px; padding: .45em .7em; position: relative; overflow: hidden; }
+.freq li .bar2 { position: absolute; inset: 0 auto 0 0; background: color-mix(in srgb, var(--c) 22%, transparent); z-index: 0; }
+.freq li > * { position: relative; z-index: 1; }
+.freq .emo { font-size: 1.4em; }
+.freq .num { font: 400 calc(1.05em * var(--ns, 1)) var(--font-display); color: var(--c); }
+.freq .nm { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.freq .ct { font: 700 .85em var(--font-mono); }
+.muted { color: var(--muted); margin: 0; font-size: .9em; }
+
+/* Pantalla (TV): 8 tarjetas grandes, sin scroll, medidas relativas al tamaño de la pantalla */
+.board.tvview { font-size: calc(min(1vw, 1.78vh) * var(--zoom, 1)); }
+.tvgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: minmax(22em, auto); gap: .9em; min-height: 0; }
+.tvcard { border: 2px solid color-mix(in srgb, var(--c) 55%, var(--line)); border-radius: 1em; background: color-mix(in srgb, var(--c) 8%, var(--board)); padding: .9em 1em; display: grid; grid-template-rows: auto 1fr auto; gap: .6em; min-width: 0; min-height: 0; overflow: hidden; }
+.tvcard header { display: flex; justify-content: space-between; align-items: baseline; gap: .2em .6em; flex-wrap: wrap; }
+.tvcard h3 { margin: 0; font: 400 1.25em/1.1 var(--font-display); color: var(--c); letter-spacing: .02em; text-transform: uppercase; min-width: 0; text-wrap: balance; }
+.tvcard header span { font: 500 .8em var(--font-mono); color: var(--muted); }
+.tvmain { display: flex; align-items: center; gap: .8em; min-height: 0; min-width: 0; }
+.bigemo { font-size: 5.2em; line-height: 1; flex: none; }
+.bigemo.off { opacity: .3; filter: grayscale(1); }
+.bigtxt { display: grid; gap: .1em; min-width: 0; }
+.bignum { font: 400 calc(4.2em * var(--ns, 1))/1 var(--font-display); color: var(--c); }
+.bigname { font-size: calc(1.7em * var(--nn, 1)); font-weight: 700; line-height: 1.1; overflow-wrap: anywhere; }
+.bigtime { font: 500 .85em var(--font-mono); color: var(--muted); }
+.tvchips { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(5.2em, 1fr)); gap: .35em; }
+.tvchips li { display: grid; justify-items: center; gap: .05em; padding: .3em .2em; border: 1px dashed var(--line); border-radius: .5em; color: var(--muted); min-width: 0; }
+.tvchips li i { font: 500 .62em var(--font-mono); font-style: normal; white-space: nowrap; }
+.tvchips li b { font: 700 calc(.95em * var(--ns, 1)) var(--font-body); white-space: nowrap; }
+.tvchips li.has { border: 1px solid color-mix(in srgb, var(--c) 50%, var(--line)); color: var(--fg); background: color-mix(in srgb, var(--c) 12%, var(--board)); }
+.tvchips li.cur { border-color: var(--now); box-shadow: 0 0 0 2px var(--now); }
+@media (max-width: 1000px) {
+  .tvgrid { grid-template-columns: repeat(auto-fill, minmax(20em, 1fr)); }
+  .board.tvview { font-size: calc(14px * var(--zoom, 1)); }
+}
+html.tvroot, html.tvroot body { overflow: hidden; }
+html.tvroot body { padding-block: 10px; }
+.app.tv { height: calc(100vh - 20px); display: flex; flex-direction: column; gap: .7em; max-width: none; }
+.app.tv .board { flex: 1 1 0; min-height: 0; grid-template-rows: minmax(0, 1fr); }
+.app.tv .top { flex: none; }
+.app.tv .ad { flex: none; height: 10vh; max-height: none; }
+.app.tv:fullscreen, .app.tv:-webkit-full-screen { height: 100vh; background: var(--bg); color: var(--fg); box-sizing: border-box; padding: 10px max(16px, env(safe-area-inset-right, 0px)); overflow: hidden; }
+.app.tv .ad img { max-height: none; }
+.app.tv .board.tvview { border: 0; background: transparent; padding: 0; }
+.app.tv .tvgrid { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); grid-auto-rows: auto; height: 100%; }
+.app.tv h1 { font-size: clamp(2rem, 3.4vw, 4.5rem); }
+.app.tv .clock b { font-size: clamp(2rem, 3.4vw, 4.5rem); }
+.app.tv .clock span { font-size: clamp(1rem, 1.4vw, 1.8rem); }
+
+/* Modal */
+.modal { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.6); display: grid; place-items: center; padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+.modal[hidden] { display: none; }
+.ad { display: grid; place-items: center; background: var(--board); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; min-width: 0; }
+.ad[hidden], .app.tv .ad[hidden] { display: none; }
+.ad a { display: grid; width: 100%; height: 100%; place-items: center; }
+.ad img { display: block; width: 100%; height: 100%; max-height: 150px; object-fit: contain; }
+.adrow { display: grid; grid-template-columns: 7em 1fr auto; gap: 8px; align-items: center; }
+.adrow .thumb { width: 7em; height: 3em; object-fit: contain; background: var(--raise); border: 1px solid var(--line); border-radius: 6px; }
+.adrow input[type="url"], .adrow input[type="text"] { min-width: 0; width: 100%; background: var(--raise); border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; }
+.adzone { display: grid; gap: 10px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.adzone h4 { margin: 0; font-size: .85rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.adzone label.btn { display: inline-block; justify-self: start; padding: 7px 12px; font-size: .88rem; color: var(--fg); cursor: pointer; }
+.adzone label.btn:focus-within { outline: 2px solid var(--now); outline-offset: 2px; }
+.adzone input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+@media (max-width: 560px) { .adrow { grid-template-columns: 5em 1fr; } .adrow .btn { grid-column: 1 / -1; justify-self: start; } .adrow .thumb { width: 5em; } }
+.logo { height: 1.7em; width: auto; max-width: 5.5em; object-fit: contain; vertical-align: middle; margin-right: .45em; }
+.card .lot .logo { height: 1.9em; }
+.hcell .logo { display: block; margin: 0 auto .35em; height: 2.6em; max-width: 100%; }
+.tvcard h3 { display: flex; align-items: center; gap: .1em; }
+.tvcard .logo { height: 2.8em; max-width: 7em; }
+.tvcard header h3 span { font: inherit; color: inherit; }
+.datehead .logo { height: 1.9em; margin: 0 0 0 .5em; }
+.lgrow { display: grid; grid-template-columns: 3.4em 1fr auto auto; gap: 8px; align-items: center; }
+.lgrow .thumb { height: 2.6em; width: 3.4em; object-fit: contain; background: var(--raise); border: 1px solid var(--line); border-radius: 6px; }
+.lgrow .thumb.none { display: grid; place-items: center; font-size: .65rem; color: var(--muted); text-align: center; }
+.lgrow span.n { font-size: .85rem; min-width: 0; overflow-wrap: anywhere; }
+.lgrow input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.lgrow label.btn { display: inline-block; padding: 6px 11px; font-size: .85rem; color: var(--fg); cursor: pointer; }
+.lgrow label.btn:focus-within { outline: 2px solid var(--now); outline-offset: 2px; }
+.modal.look { background: transparent; pointer-events: none; place-items: start end; }
+.modal.look .panel { pointer-events: auto; width: min(400px, 100%); max-height: calc(100vh - 32px); box-shadow: 0 10px 40px rgba(0,0,0,.45); }
+.lk { display: grid; gap: 10px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.lk h4 { margin: 0; font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.lk .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5em, 1fr)); gap: 8px 12px; }
+.lk label { display: grid; gap: 4px; font-size: .85rem; color: var(--muted); min-width: 0; }
+.lk label.inl { grid-template-columns: 1fr auto; align-items: center; }
+.lk input[type="color"] { width: 100%; min-width: 2.6em; height: 2.2em; padding: 2px; background: var(--raise); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.lk label.inl input[type="color"] { width: 3.2em; }
+.lk input[type="range"] { width: 100%; accent-color: var(--now); }
+.lk output { color: var(--fg); font: 500 .8rem var(--font-mono); }
+.lk .presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.panel { background: var(--board); border: 1px solid var(--line); border-radius: 12px; width: min(720px, 100%); max-height: 100%; overflow: auto; padding: 18px; display: grid; gap: 14px; font-size: 14px; }
+.panel header { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+.panel h3 { margin: 0; font: 400 1.15rem/1.15 var(--font-display); }
+.panel header p { margin: 4px 0 0; color: var(--muted); font-size: .9rem; text-transform: capitalize; }
+.picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(6em, 1fr)); gap: 6px; }
+.pick { display: grid; justify-items: center; gap: 2px; padding: 8px 4px; background: var(--raise); border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+.pick:hover { border-color: var(--c); }
+.pick[aria-pressed="true"] { border-color: var(--c); background: color-mix(in srgb, var(--c) 22%, var(--raise)); }
+.pick .emo { font-size: 1.6rem; line-height: 1; }
+.pick .num { font: 400 .95rem var(--font-display); color: var(--c); }
+.pick .nm { font-size: .72rem; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.fields { display: flex; flex-wrap: wrap; gap: 14px; }
+.fields label { display: grid; gap: 4px; font-size: .85rem; color: var(--muted); }
+
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: max(18px, env(safe-area-inset-bottom, 0px)); background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-weight: 500; z-index: 60; max-width: calc(100% - 32px); }
+.toast[hidden] { display: none; }
+
+/* TV mode */
+.exitTV { display: none; }
+.app.tv .bar, .app.tv .note, .app.tv .brand p { display: none; }
+.app.tv .board { border-radius: 0; }
+.app.tv .exitTV { display: inline-flex; position: fixed; top: max(10px, env(safe-area-inset-top, 0px)); right: max(10px, env(safe-area-inset-right, 0px)); z-index: 20; opacity: .55; }
+.app.tv .exitTV:hover, .app.tv .exitTV:focus-visible { opacity: 1; }
+.app.tv .clock { padding-right: 90px; }
+
+@media (max-width: 560px) {
+  .clock { text-align: left; }
+  .spacer { display: none; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .cell, .card, .pick, .btn { transition: border-color .15s, background-color .15s; }
+}
+/* Triples: mismas tarjetas grandes que la pantalla de animalitos, con 3 cifras y signo */
+.tvgrid.trip { grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); }
+.app.tv .tvgrid.trip { grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr)); grid-template-rows: repeat(var(--rows, 2), minmax(0, 1fr)); }
+.tvcard.trip .bignum { letter-spacing: .06em; font-size: calc(4.4em * var(--ns, 1)); }
+.tvchips li[data-tg] { cursor: pointer; }
+.tvchips li[data-tg]:hover, .tvchips li[data-tg]:focus-visible { border-color: var(--c); }
+.tvchips li.has b { letter-spacing: .02em; }
+@media (max-width: 1000px) { .tvgrid.trip, .app.tv .tvgrid.trip { grid-template-columns: repeat(auto-fill, minmax(20em, 1fr)); grid-template-rows: none; } }
+/* Barra de avance de la alternancia entre pizarras (solo en pantalla completa) */
+.prog { display: none; align-items: center; gap: .8em; }
+.app.tv .prog:not([hidden]) { display: flex; }
+.prog span { font: 700 .8rem var(--font-body); text-transform: uppercase; letter-spacing: .1em; color: var(--now); white-space: nowrap; }
+.prog i { flex: 1; height: 4px; border-radius: 2px; background: var(--line); position: relative; overflow: hidden; }
+.prog i::after { content: ""; position: absolute; inset: 0; background: var(--now); transform: scaleX(0); transform-origin: left; }
+.prog.run i::after { animation: progress var(--dur, 20s) linear forwards; }
+@keyframes progress { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.trow { align-items: center; }
+.trow .times { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+.trow .times input { width: 8.4em; }
+.tri-num { font: 400 2.6rem/1 var(--font-display); letter-spacing: .2em; text-align: center; width: 100%; color: var(--c); }
+@media (prefers-reduced-motion: no-preference) {
+  .board.fadein { animation: slidein .7s ease both; }
+  @keyframes slidein { from { opacity: 0; transform: translateX(2.5%); } to { opacity: 1; transform: none; } }
+}
+</style>
+
+<div class="app" id="app">
+  <header class="top">
+    <div class="brand">
+      <h1>Pizarra Animaltec</h1>
+      <p id="brandSub">Resultados de animalitos, hora de Caracas</p>
+    </div>
+    <div class="clock" aria-live="off"><b id="clockTime">--:--:--</b><span id="clockDate"></span></div>
+  </header>
+
+  <div class="prog" id="prog" hidden><span id="progLabel"></span><i></i></div>
+
+  <div class="bar" id="bar">
+    <div class="seg" role="group" aria-label="Vista">
+      <button type="button" id="tabDay" aria-pressed="true">Diario</button>
+      <button type="button" id="tabWeek" aria-pressed="false">Semanal</button>
+      <button type="button" id="tabTV" aria-pressed="false">Pantalla</button>
+      <button type="button" id="tabTri" aria-pressed="false">Triples</button>
+    </div>
+    <div class="datenav">
+      <button type="button" class="btn icon" id="prev" aria-label="Anterior">&#8249;</button>
+      <input type="date" id="dateInput" aria-label="Fecha del sorteo">
+      <button type="button" class="btn icon" id="next" aria-label="Siguiente">&#8250;</button>
+      <button type="button" class="btn" id="today">Hoy</button>
+    </div>
+    <span class="live" id="live"><i></i><span id="liveText">Conectando</span></span>
+    <span class="spacer"></span>
+    <div class="zoom" role="group" aria-label="Tamaño del tablero">
+      <button type="button" class="btn icon" id="zoomOut" aria-label="Reducir tamaño">A&minus;</button>
+      <button type="button" class="btn icon" id="zoomIn" aria-label="Aumentar tamaño">A+</button>
+    </div>
+    <button type="button" class="btn" id="btnLook">Personalizar</button>
+    <button type="button" class="btn" id="btnAds">Publicidad</button>
+    <button type="button" class="btn" id="btnSlots">Horarios</button>
+    <button type="button" class="btn" id="btnTri">Triples</button>
+    <button type="button" class="btn primary" id="btnTV">Pantalla completa</button>
+  </div>
+
+  <p class="note" id="note" hidden></p>
+
+  <aside class="ad" id="adTop" aria-label="Publicidad" hidden></aside>
+  <main class="board" id="board"></main>
+  <aside class="ad" id="adBottom" aria-label="Publicidad" hidden></aside>
+  <button type="button" class="btn exitTV" id="exitTV">Salir</button>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="panel" role="dialog" aria-modal="true" aria-labelledby="mTitle" id="panel"></div>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ---------- Data ---------- */
+  var LOTTERIES = [
+    { id: 'lotto-activo', name: 'Lotto Activo', h: 218 },
+    { id: 'guacharo', name: 'Guácharo Activo', h: 142 },
+    { id: 'guacharito', name: 'El Guacharito Millonario', h: 14 },
+    { id: 'selva-plus', name: 'Selva Plus', h: 172 },
+    { id: 'loto-chaima', name: 'Loto Chaima', h: 32 },
+    { id: 'granjita', name: 'La Granjita', h: 50 },
+    { id: 'monje-millonario', name: 'Monje Millonario', h: 196 },
+    { id: 'lotto-activo-internacional', name: 'Lotto Activo RD Internacional', h: 268 }
+  ];
+  var ANIMALS = [
+    ['Delfín','🐬'],['Carnero','🐏'],['Toro','🐂'],['Ciempiés','🐛'],['Alacrán','🦂'],['León','🦁'],
+    ['Rana','🐸'],['Perico','🦜'],['Ratón','🐭'],['Águila','🦅'],['Tigre','🐯'],['Gato','🐱'],
+    ['Caballo','🐴'],['Mono','🐵'],['Paloma','🕊️'],['Zorro','🦊'],['Oso','🐻'],['Pavo','🦃'],
+    ['Burro','🫏'],['Cabro','🐐'],['Cochino','🐖'],['Gallo','🐓'],['Camello','🐪'],['Cebra','🦓'],
+    ['Iguana','🦎'],['Gallina','🐔'],['Vaca','🐮'],['Perro','🐶'],['Zamuro','🦅'],['Elefante','🐘'],
+    ['Culebra','🐍'],['Lapa','🦫'],['Ardilla','🐿️'],['Pescado','🐟'],['Venado','🦌'],['Jirafa','🦒'],
+    ['Cochinera','🐖'],['Ballena','🐋']
+  ];
+  var GUACHARO = (function () {
+    var names = ['Delfín','Carnero','Toro','Ciempiés','Alacrán','León','Rana','Perico','Ratón','Águila','Tigre','Gato','Caballo','Mono','Paloma','Zorro','Oso','Pavo','Burro','Chivo','Cochino','Gallo','Camello','Cebra','Iguana','Gallina','Vaca','Perro','Zamuro','Elefante','Caimán','Lapa','Ardilla','Pescado','Venado','Jirafa','Culebra','Tortuga','Búfalo','Lechuza','Avispa','Canguro','Tucán','Mariposa','Chigüire','Garza','Puma','Pavo Real','Puercoespín','Pereza','Canario','Pelícano','Pulpo','Caracol','Grillo','Oso Hormiguero','Tiburón','Pato','Hormiga','Pantera','Camaleón','Panda','Cachicamo','Cangrejo','Gavilán','Araña','Lobo','Avestruz','Jaguar','Conejo','Bisonte','Guacamaya','Gorila','Hipopótamo','Turpial','Guacharo','Ballena'];
+    var emo = ['🐬','🐏','🐂','🐛','🦂','🦁','🐸','🦜','🐭','🦅','🐯','🐱','🐴','🐵','🕊️','🦊','🐻','🦃','🫏','🐐','🐖','🐓','🐪','🦓','🦎','🐔','🐮','🐶','🦅','🐘','🐊','🦫','🐿️','🐟','🦌','🦒','🐍','🐢','🦬','🦉','🐝','🦘','🦜','🦋','🦫','🦩','🐆','🦚','🦔','🦥','🐤','🦤','🐙','🐌','🦗','🦡','🦈','🦆','🐜','🐆','🦎','🐼','🦔','🦀','🦅','🕷️','🐺','🦤','🐆','🐰','🦬','🦜','🦍','🦛','🐤','🦇','🐋'];
+    return names.map(function (nm, i) { return [nm, emo[i]]; });
+  })();
+  // El Guacharito Millonario juega con 100 animales (0 a 99 y el 00, la Ballena, guardada como posición 100).
+  var GUACHARITO = (function () {
+    var more = [['Rinoceronte','🦏'],['Pingüino','🐧'],['Antílope','🦌'],['Calamar','🦑'],['Murciélago','🦇'],['Cuervo','🐦‍⬛'],['Cucaracha','🪳'],['Búho','🦉'],['Camarón','🦐'],['Hámster','🐹'],['Buey','🐂'],['Cabra','🐐'],['Erizo de Mar','🐡'],['Anguila','🐍'],['Hurón','🦡'],['Morrocoy','🐢'],['Cisne','🦢'],['Gaviota','🕊️'],['Paujil','🦃'],['Escarabajo','🪲'],['Caballito de Mar','🐡'],['Loro','🦜'],['Cocodrilo','🐊'],['Guacharito','🐦']];
+    var base = GUACHARO.slice(0, 76).map(function (a, i) { return i === 20 ? ['Cerdo', a[1]] : a; });
+    return base.concat(more, [GUACHARO[76]]);
+  })();
+  // Guácharo Activo juega con 76 animales (0 a 75 y el 00, la Ballena, guardada como posición 76).
+  // Selva Plus: 100 animales (0 a 99, con el Halcón en el 99), el 00 y 2 comodines: A (Leoncito) y B (Selva Plus).
+  var SELVA = (function () {
+    var base = GUACHARITO.slice(0, 100).map(function (a, i) {
+      if (i === 20) return ['Cochino', a[1]];
+      if (i === 75) return ['Guácharo', a[1]];
+      if (i === 99) return ['Halcón', '🦅'];
+      return a;
+    });
+    return base.concat([GUACHARITO[100], ['Leoncito', '🦁'], ['Selva Plus', '🌴']]);
+  })();
+  // Triples: 3 cifras (000 a 999) y signo del zodiaco. Los nombres y horarios son editables en «Triples».
+  var SIGNS = [['Aries','♈'],['Tauro','♉'],['Géminis','♊'],['Cáncer','♋'],['Leo','♌'],['Virgo','♍'],['Libra','♎'],['Escorpio','♏'],['Sagitario','♐'],['Capricornio','♑'],['Acuario','♒'],['Piscis','♓']]
+    .map(function (z) { return [z[0], z[1] + '\uFE0F']; });
+  var TRIPLES = [
+    { id: 'triple-zamorano', name: 'Triple Zamorano', h: 28 },
+    { id: 'triple-caliente', name: 'Triple Caliente', h: 4 },
+    { id: 'triple-zulia', name: 'Triple Zulia', h: 205 },
+    { id: 'triple-tachira', name: 'Triple Táchira', h: 130 },
+    { id: 'triple-caracas', name: 'Triple Caracas', h: 285 },
+    { id: 'triple-chance', name: 'Triple Chance', h: 52 }
+  ];
+  function listFor(g) { return g === 'guacharo' ? GUACHARO : g === 'guacharito' ? GUACHARITO : g === 'selva-plus' ? SELVA : ANIMALS; }
+  function zeroIdx(g) { return g === 'guacharo' ? 76 : (g === 'guacharito' || g === 'selva-plus') ? 100 : -1; }
+  function labelOf(g, n) {
+    var z = zeroIdx(g);
+    if (g === 'selva-plus' && n > z) return n === 101 ? 'A' : 'B';
+    if (z >= 0) return n === z ? '00' : n === 0 ? '0' : n < 10 ? '0' + n : String(n);
+    return n === 37 ? '00' : String(n);
+  }
+  function plain(s) { return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); }
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function lotById(id) { for (var i = 0; i < LOTTERIES.length; i++) if (LOTTERIES[i].id === id) return LOTTERIES[i]; return null; }
+
+  /* ---------- Dates (Caracas) ---------- */
+  var TZ = 'America/Caracas';
+  var partsFmt = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+  function nowCaracas() {
+    var p = {}; partsFmt.formatToParts(new Date()).forEach(function (x) { p[x.type] = x.value; });
+    return { date: p.year + '-' + p.month + '-' + p.day, h: +p.hour, m: +p.minute, s: +p.second };
+  }
+  function toMs(s) { var a = s.split('-'); return Date.UTC(+a[0], +a[1] - 1, +a[2]); }
+  function addDays(s, n) { return new Date(toMs(s) + n * 864e5).toISOString().slice(0, 10); }
+  function weekStart(s) { var dow = (new Date(toMs(s)).getUTCDay() + 6) % 7; return addDays(s, -dow); }
+  function validDate(s) { return /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(toMs(s)); }
+  var longFmt = new Intl.DateTimeFormat('es-VE', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+  var shortDow = new Intl.DateTimeFormat('es-VE', { weekday: 'short', timeZone: 'UTC' });
+  var dayNum = new Intl.DateTimeFormat('es-VE', { day: 'numeric', timeZone: 'UTC' });
+  var rangeFmt = new Intl.DateTimeFormat('es-VE', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  function fmtLong(s) { return longFmt.format(new Date(toMs(s))); }
+  function fmtTime(t) { var h = Math.floor(t / 60), m = t % 60; return (h % 12 || 12) + ':' + pad(m) + ' ' + (h < 12 ? 'AM' : 'PM'); }
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+
+  /* ---------- State ---------- */
+  var state = { view: 'day', date: nowCaracas().date, lottery: LOTTERIES[0].id, zoom: 1, tv: false };
+  var sched = {};              // per lottery: { from, to } in minutes after midnight, one draw per hour
+  LOTTERIES.forEach(function (L) { sched[L.id] = { from: 480, to: 1140 }; });
+  sched['guacharito'] = { from: 510, to: 1170 };
+  sched['selva-plus'] = { from: 495, to: 1215 };
+  var mode = 'local';          // 'shared' when the db capability answers
+  var db = null;
+  var canWrite = true;
+  var syncError = false;
+  var remote = new Map();      // shared results for the visible week
+  var local = {};              // local fallback results
+  var unsubRes = null, subKey = '';
+  var picker = null;           // { g, h, d }
+  var tcfg = {};               // triples: id -> { n: nombre, on: visible, ts: [minutos de cada sorteo] }
+  TRIPLES.forEach(function (T) { tcfg[T.id] = { n: T.name, on: true, ts: [780, 960, 1140] }; });
+  var rot = { on: true, a: 20, t: 15 };   // alternar pizarras: segundos mostrando animalitos (a) y triples (t)
+  var tremote = new Map(), tlocal = {}, unsubTri = null, tpick = null, rotTimer = null;
+  state.slide = 'animals'; state.tvFixed = null;
+
+  function store(key, val) { try { if (val === undefined) return JSON.parse(localStorage.getItem(key) || 'null'); localStorage.setItem(key, JSON.stringify(val)); } catch (e) {} return null; }
+  (function loadPrefs() {
+    var z = store('pizarra-animaltec.zoom'); if (typeof z === 'number' && z >= .8 && z <= 2) state.zoom = z;
+    var l = store('pizarra-animaltec.local'); if (l && typeof l === 'object') local = l;
+    var s = store('pizarra-animaltec.sched'); if (s && typeof s === 'object') applySched(s);
+    var tl = store('pizarra-animaltec.triples.local'); if (tl && typeof tl === 'object') tlocal = tl;
+    var tc = store('pizarra-animaltec.triples.cfg'); if (tc && typeof tc === 'object') applyTcfg(tc);
+  })();
+
+  function key(d, g, t) { return d + '_' + g + '_' + t; }
+  function getRes(d, g, t) {
+    var v = mode === 'shared' ? remote.get(key(d, g, t)) : local[key(d, g, t)];
+    return typeof v === 'number' ? v : undefined;
+  }
+  function validSlot(s) { return !!s && Number.isInteger(s.from) && Number.isInteger(s.to) && s.from >= 0 && s.to <= 1439 && s.from <= s.to; }
+  function applySched(src) { LOTTERIES.forEach(function (L) { if (src && validSlot(src[L.id])) sched[L.id] = { from: src[L.id].from, to: src[L.id].to }; }); }
+  function slotsOf(g) { var s = sched[g], out = []; for (var t = s.from; t <= s.to; t += 60) out.push(t); return out; }
+  /* ---------- Triples: datos ---------- */
+  function triById(id) { for (var i = 0; i < TRIPLES.length; i++) if (TRIPLES[i].id === id) return TRIPLES[i]; return null; }
+  function applyTcfg(src) {
+    var c = src && src.c, r = src && src.r;
+    if (c && typeof c === 'object') TRIPLES.forEach(function (T) {
+      var v = c[T.id]; if (!v || typeof v !== 'object') return;
+      var cur = tcfg[T.id];
+      if (typeof v.n === 'string' && v.n.trim()) cur.n = v.n.trim().slice(0, 40);
+      if (typeof v.on === 'boolean') cur.on = v.on;
+      if (Array.isArray(v.ts)) {
+        var seen = {}, ts = [];
+        v.ts.forEach(function (t) { if (Number.isInteger(t) && t >= 0 && t <= 1439 && !seen[t] && ts.length < 6) { seen[t] = 1; ts.push(t); } });
+        cur.ts = ts.sort(function (a, b) { return a - b; });
+      }
+    });
+    if (r && typeof r === 'object') {
+      if (typeof r.on === 'boolean') rot.on = r.on;
+      if (Number.isInteger(r.a) && r.a >= 5 && r.a <= 300) rot.a = r.a;
+      if (Number.isInteger(r.t) && r.t >= 5 && r.t <= 300) rot.t = r.t;
+    }
+  }
+  function enabledTriples() { return TRIPLES.filter(function (T) { return tcfg[T.id].on; }); }
+  function pad3(n) { return ('00' + n).slice(-3); }
+  function getTri(d, g, t) {
+    var v = mode === 'shared' ? tremote.get(key(d, g, t)) : tlocal[key(d, g, t)];
+    return v && typeof v.n === 'number' ? v : undefined;
+  }
+  function latestTri(g, d) {
+    var ts = tcfg[g].ts;
+    for (var i = ts.length - 1; i >= 0; i--) { var r = getTri(d, g, ts[i]); if (r) return { t: ts[i], n: r.n, z: r.z }; }
+    return null;
+  }
+  function allTimes() { var set = {}; LOTTERIES.forEach(function (L) { slotsOf(L.id).forEach(function (t) { set[t] = 1; }); }); return Object.keys(set).map(Number).sort(function (a, b) { return a - b; }); }
+
+  /* ---------- Elements ---------- */
+  var $ = function (id) { return document.getElementById(id); };
+  var app = $('app'), board = $('board'), note = $('note');
+
+  /* ---------- Personalizar (solo en este dispositivo) ---------- */
+  var DISPLAY_FONTS = ['Bungee', 'Anton', 'Oswald', 'Bebas Neue', 'Rubik', 'Montserrat', 'Poppins', 'Archivo Black', 'Russo One', 'Orbitron', 'Del sistema'];
+  var BODY_FONTS = ['Schibsted Grotesk', 'Roboto', 'Open Sans', 'Nunito', 'Lato', 'Inter', 'Montserrat', 'Del sistema'];
+  var PRESETS = {
+    verde: { name: 'Pizarra verde', bg: null, board: null, fg: null, now: null, cs: null, cl: null },
+    negro: { name: 'Negro', bg: '#000000', board: '#0b0b0b', fg: '#ffffff', now: '#ffd400', cs: null, cl: null },
+    azul: { name: 'Azul noche', bg: '#0a1226', board: '#101c3a', fg: '#eaf0ff', now: '#ffc857', cs: null, cl: null },
+    claro: { name: 'Claro', bg: '#eef1f5', board: '#ffffff', fg: '#14202b', now: '#b06a00', cs: '62%', cl: '38%' },
+    contraste: { name: 'Alto contraste', bg: '#000000', board: '#000000', fg: '#ffffff', now: '#00ff7f', cs: '100%', cl: '62%' }
+  };
+  var look = { bg: null, board: null, fg: null, now: null, cs: null, cl: null, fd: 'Bungee', fb: 'Schibsted Grotesk', ns: 1, nn: 1, chalk: {} };
+  (function loadLook() {
+    var v = store('pizarra-animaltec.look');
+    if (!v || typeof v !== 'object') return;
+    ['bg', 'board', 'fg', 'now'].forEach(function (k) { if (/^#[0-9a-f]{6}$/i.test(v[k])) look[k] = v[k]; });
+    ['cs', 'cl'].forEach(function (k) { if (/^\d{1,3}%$/.test(v[k])) look[k] = v[k]; });
+    if (DISPLAY_FONTS.indexOf(v.fd) >= 0) look.fd = v.fd;
+    if (BODY_FONTS.indexOf(v.fb) >= 0) look.fb = v.fb;
+    ['ns', 'nn'].forEach(function (k) { var x = Number(v[k]); if (x >= .6 && x <= 2) look[k] = x; });
+    if (v.chalk && typeof v.chalk === 'object') LOTTERIES.forEach(function (L) { if (/^#[0-9a-f]{6}$/i.test(v.chalk[L.id])) look.chalk[L.id] = v.chalk[L.id]; });
+  })();
+  var logos = {};              // id -> data URL (compartidos si hay base de datos, si no locales)
+  var logosShared = {}, logosLocal = store('pizarra-animaltec.logos') || {};
+  function okLogo(u) { return typeof u === 'string' && /^data:image\/(png|jpeg|webp|gif|svg\+xml);base64,[A-Za-z0-9+\/=]+$/.test(u) && u.length < 240000; }
+  function mergeLogos() {
+    logos = {};
+    LOTTERIES.forEach(function (L) { var u = logosShared[L.id] || logosLocal[L.id]; if (okLogo(u)) logos[L.id] = u; });
+  }
+  mergeLogos();
+  function logoImg(L) { return logos[L.id] ? '<img class="logo" src="' + logos[L.id] + '" alt="" aria-hidden="true">' : ''; }
+  function resizeLogo(file, maxW, maxH, q) {
+    maxW = maxW || 256; maxH = maxH || 256; q = q || .92;
+    return new Promise(function (resolve, reject) {
+      var fr = new FileReader();
+      fr.onerror = function () { reject(new Error('read')); };
+      fr.onload = function () {
+        var img = new Image();
+        img.onerror = function () { reject(new Error('img')); };
+        img.onload = function () {
+          var k = Math.min(1, maxW / img.width, maxH / img.height), w = Math.max(1, Math.round(img.width * k)), h = Math.max(1, Math.round(img.height * k));
+          var c = document.createElement('canvas'); c.width = w; c.height = h;
+          c.getContext('2d').drawImage(img, 0, 0, w, h);
+          var u = c.toDataURL('image/webp', q);
+          if (u.indexOf('data:image/webp') !== 0) u = c.toDataURL('image/png');
+          resolve(u);
+        };
+        img.src = fr.result;
+      };
+      fr.readAsDataURL(file);
+    });
+  }
+  async function saveLogo(id, url) {
+    var shared = false;
+    if (mode === 'shared' && canWrite) {
+      try { if (url) await db.doc('logos/' + id).set({ u: url }); else await db.doc('logos/' + id).delete(); shared = true; }
+      catch (e) { toast('No se pudo compartir el logo. Quedó solo en este navegador.'); }
+    }
+    if (shared) { delete logosLocal[id]; delete logosShared[id]; if (url) logosShared[id] = url; }
+    else if (url) logosLocal[id] = url; else { delete logosLocal[id]; delete logosShared[id]; }
+    store('pizarra-animaltec.logos', logosLocal);
+    mergeLogos(); renderBoard(); refreshLogoRows();
+  }
+  function logoRowsHTML() {
+    return LOTTERIES.map(function (L) {
+      return '<div class="lgrow"><' + (logos[L.id] ? 'img class="thumb" src="' + logos[L.id] + '" alt=""' : 'span class="thumb none"') + '>' + (logos[L.id] ? '' : 'Sin logo</span>') +
+        '<span class="n">' + esc(L.name) + '</span>' +
+        '<label class="btn">Subir<input type="file" accept="image/*" data-logo="' + L.id + '" aria-label="Subir logo de ' + esc(L.name) + '"></label>' +
+        (logos[L.id] ? '<button type="button" class="btn" data-logoclear="' + L.id + '">Quitar</button>' : '<span></span>') + '</div>';
+    }).join('');
+  }
+  function refreshLogoRows() { var el = $('lkLogos'); if (el) el.innerHTML = logoRowsHTML(); }
+
+  /* ---------- Publicidad ---------- */
+  var adsShared = [], adsLocal = store('pizarra-animaltec.ads') || [], ads = [];
+  var adSec = 10, adSecLocal = Number(store('pizarra-animaltec.adsec')) || 0;
+  var adIdx = { top: 0, bottom: 0 }, adShown = { top: '', bottom: '' }, adTimer = null;
+  var AD_ZONES = [['top', 'Banner superior', 'adTop'], ['bottom', 'Banner inferior', 'adBottom']];
+  function okAd(a) { return !!a && typeof a.id === 'string' && (a.z === 'top' || a.z === 'bottom') && okLogo(a.u); }
+  function okLink(l) { return l === '' || /^https?:\/\/[^\s"'<>]+$/i.test(l); }
+  function mergeAds() {
+    var seen = {};
+    ads = adsShared.concat(adsLocal).filter(function (a) { if (!okAd(a) || seen[a.id]) return false; seen[a.id] = 1; return true; })
+      .sort(function (a, b) { return (a.o || 0) - (b.o || 0); });
+  }
+  mergeAds();
+  function adsIn(z) { return ads.filter(function (a) { return a.z === z; }); }
+  function renderAds() {
+    var wasHidden = [$('adTop').hidden, $('adBottom').hidden];
+    AD_ZONES.forEach(function (Z) {
+      var el = $(Z[2]), list = adsIn(Z[0]);
+      if (!list.length) { el.hidden = true; el.innerHTML = ''; adShown[Z[0]] = ''; return; }
+      var a = list[adIdx[Z[0]] % list.length], sig = a.id + '|' + a.l + '|' + state.tv;
+      el.hidden = false;
+      if (adShown[Z[0]] === sig) return;
+      adShown[Z[0]] = sig;
+      var img = '<img src="' + a.u + '" alt="Publicidad">';
+      el.innerHTML = (a.l && !state.tv) ? '<a href="' + esc(a.l) + '" target="_blank" rel="noopener noreferrer">' + img + '</a>' : img;
+    });
+    if (wasHidden[0] !== $('adTop').hidden || wasHidden[1] !== $('adBottom').hidden) fitTV();
+  }
+  function restartAdTimer() {
+    if (adTimer) clearInterval(adTimer);
+    adTimer = setInterval(function () { adIdx.top++; adIdx.bottom++; renderAds(); }, Math.max(3, adSec) * 1000);
+  }
+  async function saveAdDoc(a, remove) {
+    var inShared = adsShared.some(function (x) { return x.id === a.id; });
+    if (inShared || (!remove && mode === 'shared' && canWrite && a._new)) {
+      try {
+        if (remove) await db.doc('ads/' + a.id).delete(); else await db.doc('ads/' + a.id).set({ z: a.z, u: a.u, l: a.l || '', o: a.o });
+        adsShared = adsShared.filter(function (x) { return x.id !== a.id; });
+        if (!remove) adsShared.push({ id: a.id, z: a.z, u: a.u, l: a.l || '', o: a.o });
+        mergeAds(); renderAds(); refreshAdRows(); return;
+      } catch (e) { toast('No se pudo guardar en la pizarra compartida.'); if (inShared) return; }
+    }
+    adsLocal = adsLocal.filter(function (x) { return x.id !== a.id; });
+    if (!remove) adsLocal.push({ id: a.id, z: a.z, u: a.u, l: a.l || '', o: a.o });
+    store('pizarra-animaltec.ads', adsLocal);
+    mergeAds(); renderAds(); refreshAdRows();
+  }
+  function adRowsHTML() {
+    return AD_ZONES.map(function (Z) {
+      var list = adsIn(Z[0]);
+      return '<section class="adzone"><h4>' + Z[1] + '</h4>' +
+        (list.length ? list.map(function (a) {
+          return '<div class="adrow"><img class="thumb" src="' + a.u + '" alt=""><input type="url" data-adlink="' + a.id + '" value="' + esc(a.l || '') + '" placeholder="Enlace al tocar (opcional)" aria-label="Enlace del anuncio"><button type="button" class="btn" data-adclear="' + a.id + '">Quitar</button></div>';
+        }).join('') : '<p class="muted">Sin anuncios en esta zona.</p>') +
+        '<label class="btn">Agregar imagen<input type="file" accept="image/*" data-adfile="' + Z[0] + '" aria-label="Agregar anuncio, ' + Z[1] + '"></label></section>';
+    }).join('');
+  }
+  function refreshAdRows() { var el = $('adRows'); if (el) el.innerHTML = adRowsHTML(); }
+  function openAds() {
+    var secs = [5, 8, 10, 15, 30, 60];
+    openModal(
+      '<header><div><h3 id="mTitle">Publicidad</h3><p style="text-transform:none">Tamaño ideal: 1920 × 110 px (una franja muy ancha). ' + (mode === 'shared' && canWrite ? 'Se comparten con todos los que abran la pizarra.' : 'Se guardan solo en este navegador.') + '</p></div><button type="button" class="btn" data-close>Cerrar</button></header>' +
+      '<div class="fields"><label>Cambiar de anuncio cada<select id="adSec">' + secs.map(function (n) { return '<option value="' + n + '"' + (n === adSec ? ' selected' : '') + '>' + n + ' segundos</option>'; }).join('') + '</select></label></div>' +
+      '<div id="adRows" style="display:grid;gap:14px">' + adRowsHTML() + '</div>'
+    );
+  }
+  async function saveAdSec(n) {
+    adSec = n; restartAdTimer();
+    if (mode === 'shared' && canWrite) { try { await db.doc('config/adsettings').set({ sec: n }); return; } catch (e) {} }
+    store('pizarra-animaltec.adsec', n);
+  }
+  if (adSecLocal >= 3 && adSecLocal <= 600) adSec = adSecLocal;
+  function saveLook() { store('pizarra-animaltec.look', look); }
+  function lst(L) { return '--h:' + L.h + (look.chalk[L.id] ? ';--cc:' + look.chalk[L.id] : ''); }
+  function setVar(name, v) { if (v) document.documentElement.style.setProperty(name, v); else document.documentElement.style.removeProperty(name); }
+  function inkFor(hex) { var r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16); return (.299 * r + .587 * g + .114 * b) > 150 ? '#111111' : '#ffffff'; }
+  var loadedFonts = {};
+  function loadFont(name, weights) {
+    if (name === 'Del sistema' || loadedFonts[name] || name === 'Bungee' || name === 'Schibsted Grotesk') return;
+    loadedFonts[name] = 1;
+    var l = document.createElement('link'); l.rel = 'stylesheet';
+    l.href = 'https://fonts.googleapis.com/css2?family=' + encodeURIComponent(name).replace(/%20/g, '+') + (weights ? ':wght@' + weights : '') + '&display=swap';
+    document.head.appendChild(l);
+  }
+  function applyLook() {
+    setVar('--bg', look.bg); setVar('--board', look.board); setVar('--fg', look.fg);
+    setVar('--now', look.now); setVar('--now-ink', look.now ? inkFor(look.now) : null);
+    var d = look.board || look.fg;
+    setVar('--raise', d ? 'color-mix(in srgb, var(--fg) 7%, var(--board))' : null);
+    setVar('--line', d ? 'color-mix(in srgb, var(--fg) 20%, var(--board))' : null);
+    setVar('--muted', d ? 'color-mix(in srgb, var(--fg) 62%, var(--board))' : null);
+    setVar('--chalk-s', look.cs); setVar('--chalk-l', look.cl);
+    loadFont(look.fd, ''); loadFont(look.fb, '400;700');
+    setVar('--font-display', look.fd === 'Bungee' ? null : (look.fd === 'Del sistema' ? '' : "'" + look.fd + "', ") + "Impact, 'Arial Black', sans-serif");
+    setVar('--font-body', look.fb === 'Schibsted Grotesk' ? null : (look.fb === 'Del sistema' ? '' : "'" + look.fb + "', ") + "system-ui, -apple-system, 'Segoe UI', sans-serif");
+    board.style.setProperty('--ns', look.ns); board.style.setProperty('--nn', look.nn);
+  }
+  function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+  function toHex(v) { v = String(v || '').trim(); if (/^#[0-9a-f]{6}$/i.test(v)) return v.toLowerCase(); if (/^#[0-9a-f]{3}$/i.test(v)) return '#' + v.slice(1).split('').map(function (c) { return c + c; }).join('').toLowerCase(); return '#000000'; }
+  function hslHex(h, s, l) {
+    s /= 100; l /= 100;
+    var a = s * Math.min(l, 1 - l), f = function (n) { var k = (n + h / 30) % 12, c = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); return Math.round(255 * c).toString(16).padStart(2, '0'); };
+    return '#' + f(0) + f(8) + f(4);
+  }
+  function chalkHex(L) { return look.chalk[L.id] || hslHex(L.h, parseFloat(cssVar('--chalk-s')) || 70, parseFloat(cssVar('--chalk-l')) || 68); }
+  function opts(list, sel) { return list.map(function (f) { return '<option' + (f === sel ? ' selected' : '') + '>' + esc(f) + '</option>'; }).join(''); }
+  function openLook() {
+    var colors = [['lkBg', 'Fondo de la página', '--bg'], ['lkBoard', 'Fondo del tablero', '--board'], ['lkFg', 'Texto', '--fg'], ['lkNow', 'Acento y hora actual', '--now']];
+    openModal(
+      '<header><div><h3 id="mTitle">Personalizar</h3><p style="text-transform:none">Se guarda solo en este dispositivo, así que cada pantalla puede verse distinta.</p></div><button type="button" class="btn" data-close>Cerrar</button></header>' +
+      '<section class="lk"><h4>Temas</h4><div class="presets">' + Object.keys(PRESETS).map(function (k) { return '<button type="button" class="btn" data-preset="' + k + '">' + esc(PRESETS[k].name) + '</button>'; }).join('') + '</div></section>' +
+      '<section class="lk"><h4>Colores</h4><div class="two">' + colors.map(function (c) { return '<label>' + c[1] + '<input type="color" id="' + c[0] + '" value="' + toHex(cssVar(c[2])) + '"></label>'; }).join('') + '</div></section>' +
+      '<section class="lk"><h4>Color de cada lotería</h4><div class="two">' + LOTTERIES.map(function (L) { return '<label class="inl">' + esc(L.name) + '<input type="color" data-chalk="' + L.id + '" value="' + chalkHex(L) + '"></label>'; }).join('') + '</div><div class="row"><button type="button" class="btn" data-resetchalk>Colores originales de loterías</button></div></section>' +
+      '<section class="lk"><h4>Logos</h4><p class="muted">Sube la imagen de cada lotería. ' + (mode === 'shared' && canWrite ? 'Se comparte con todos los que abran la pizarra.' : 'Se guarda solo en este navegador.') + '</p><div class="lk" id="lkLogos" style="border:0;padding:0">' + logoRowsHTML() + '</div></section>' +
+      '<section class="lk"><h4>Letras</h4><div class="two"><label>Letra de títulos y números<select id="lkFd">' + opts(DISPLAY_FONTS, look.fd) + '</select></label><label>Letra de nombres y textos<select id="lkFb">' + opts(BODY_FONTS, look.fb) + '</select></label></div>' +
+      '<label>Tamaño general <output id="oZoom"></output><input type="range" id="lkZoom" min="0.8" max="2" step="0.05" value="' + state.zoom + '"></label>' +
+      '<label>Tamaño de los números <output id="oNs"></output><input type="range" id="lkNs" min="0.6" max="2" step="0.05" value="' + look.ns + '"></label>' +
+      '<label>Tamaño de los nombres <output id="oNn"></output><input type="range" id="lkNn" min="0.6" max="2" step="0.05" value="' + look.nn + '"></label></section>' +
+      '<div class="row"><button type="button" class="btn" data-resetlook>Restablecer todo</button></div>',
+      'look'
+    );
+    syncOut();
+  }
+  function pct(v) { return Math.round(v * 100) + '%'; }
+  function syncOut() { var a = $('oZoom'), b = $('oNs'), c = $('oNn'); if (a) a.textContent = pct(state.zoom); if (b) b.textContent = pct(look.ns); if (c) c.textContent = pct(look.nn); }
+  function syncLookInputs() {
+    [['lkBg', '--bg'], ['lkBoard', '--board'], ['lkFg', '--fg'], ['lkNow', '--now']].forEach(function (c) { var el = $(c[0]); if (el) el.value = toHex(cssVar(c[1])); });
+    LOTTERIES.forEach(function (L) { var el = $('panel').querySelector('[data-chalk="' + L.id + '"]'); if (el) el.value = chalkHex(L); });
+    if ($('lkFd')) $('lkFd').value = look.fd; if ($('lkFb')) $('lkFb').value = look.fb;
+    if ($('lkZoom')) $('lkZoom').value = state.zoom; if ($('lkNs')) $('lkNs').value = look.ns; if ($('lkNn')) $('lkNn').value = look.nn;
+    syncOut();
+  }
+  function onLookInput(e) {
+    var t = e.target, id = t.id;
+    if (t.hasAttribute('data-chalk')) { look.chalk[t.getAttribute('data-chalk')] = t.value; renderBoard(); saveLook(); return true; }
+    var map = { lkBg: 'bg', lkBoard: 'board', lkFg: 'fg', lkNow: 'now' };
+    if (map[id]) { look[map[id]] = t.value; applyLook(); saveLook(); return true; }
+    if (id === 'lkFd') { look.fd = t.value; applyLook(); saveLook(); return true; }
+    if (id === 'lkFb') { look.fb = t.value; applyLook(); saveLook(); return true; }
+    if (id === 'lkZoom') { setZoom(+t.value); syncOut(); return true; }
+    if (id === 'lkNs') { look.ns = +t.value; applyLook(); saveLook(); syncOut(); return true; }
+    if (id === 'lkNn') { look.nn = +t.value; applyLook(); saveLook(); syncOut(); return true; }
+    return false;
+  }
+  function applyPreset(k) {
+    var P = PRESETS[k]; if (!P) return;
+    ['bg', 'board', 'fg', 'now', 'cs', 'cl'].forEach(function (f) { look[f] = P[f]; });
+    applyLook(); saveLook(); syncLookInputs();
+  }
+  function resetLook() {
+    look = { bg: null, board: null, fg: null, now: null, cs: null, cl: null, fd: 'Bungee', fb: 'Schibsted Grotesk', ns: 1, nn: 1, chalk: {} };
+    state.zoom = 1; store('pizarra-animaltec.zoom', 1);
+    applyLook(); saveLook(); renderBoard(); syncLookInputs();
+  }
+
+
+  /* ---------- Rendering ---------- */
+  function animalCell(g, n, withName) {
+    var a = listFor(g)[n];
+    return '<span class="emo" aria-hidden="true">' + a[1] + '</span><span class="num">' + labelOf(g, n) + '</span>' + (withName ? '<span class="nm">' + esc(a[0]) + '</span>' : '');
+  }
+
+  function latestFor(g, d) {
+    var ts = slotsOf(g);
+    for (var i = ts.length - 1; i >= 0; i--) { var n = getRes(d, g, ts[i]); if (n !== undefined) return { t: ts[i], n: n }; }
+    return null;
+  }
+
+  function dayHTML() {
+    var d = state.date, now = nowCaracas(), isToday = d === now.date, isFuture = d > now.date;
+    var out = '<div class="datehead"><h2>' + esc(fmtLong(d)) + '</h2><span>' + (isToday ? 'Hoy' : isFuture ? 'Aún no sortea' : 'Sorteos anteriores') + '</span></div>';
+    out += '<div class="strip">' + LOTTERIES.map(function (L) {
+      var r = latestFor(L.id, d);
+      if (!r) return '<div class="card c empty" style="' + lst(L) + '"><span class="lot">' + logoImg(L) + esc(L.name) + '</span><span class="emo" aria-hidden="true">🎯</span><span class="txt"><span class="nm">Sin resultado</span></span></div>';
+      var a = listFor(L.id)[r.n];
+      return '<div class="card c" style="' + lst(L) + '"><span class="lot">' + logoImg(L) + esc(L.name) + '</span><span class="emo" aria-hidden="true">' + a[1] + '</span><span class="txt"><span class="num">' + labelOf(L.id, r.n) + '</span><br><span class="nm">' + esc(a[0]) + '</span></span><span class="tm">Último: ' + fmtTime(r.t) + '</span></div>';
+    }).join('') + '</div>';
+
+    out += '<div class="scroller" tabindex="0" aria-label="Tablero diario"><div class="grid day">';
+    out += '<div class="corner"></div>' + LOTTERIES.map(function (L) { return '<div class="hcell c" style="' + lst(L) + '">' + logoImg(L) + esc(L.name) + '</div>'; }).join('');
+    var times = allTimes(), nm = now.h * 60 + now.m, nowRow = -1;
+    if (isToday) times.forEach(function (t) { if (t <= nm) nowRow = t; });
+    times.forEach(function (t) {
+      var isNow = isToday && t === nowRow;
+      out += '<div class="tcell' + (isNow ? ' now' : '') + '">' + fmtTime(t) + '</div>';
+      LOTTERIES.forEach(function (L) {
+        var s = sched[L.id];
+        if (t < s.from || t > s.to || (t - s.from) % 60 !== 0) { out += '<div class="cell off" aria-hidden="true"></div>'; return; }
+        out += cellHTML(L, d, t, { isToday: isToday, isFuture: isFuture, nm: nm, isNow: isNow, name: true });
+      });
+    });
+    out += '</div></div>';
+    return out;
+  }
+
+  function cellHTML(L, d, t, o) {
+    var n = getRes(d, L.id, t);
+    var tag = canWrite ? 'button type="button"' : 'div';
+    var close = canWrite ? 'button' : 'div';
+    var attrs = ' data-g="' + L.id + '" data-t="' + t + '" data-d="' + d + '" style="' + lst(L) + '"';
+    var label = L.name + ', ' + fmtTime(t);
+    if (n !== undefined) {
+      return '<' + tag + ' class="cell c has' + (o.isNow ? ' rowNow' : '') + '"' + attrs + ' aria-label="' + esc(label + ', ' + listFor(L.id)[n][0] + ' ' + labelOf(L.id, n)) + '">' + animalCell(L.id, n, o.name) + '</' + close + '>';
+    }
+    var future = o.isFuture || (o.isToday && t > o.nm);
+    return '<' + tag + ' class="cell c' + (future ? ' future' : '') + (o.isNow ? ' rowNow' : '') + '"' + attrs + ' aria-label="' + esc(label + ', sin resultado') + '"><span class="dash" aria-hidden="true">' + (future ? '·' : '—') + '</span></' + close + '>';
+  }
+
+  function weekHTML() {
+    var ws = weekStart(state.date), we = addDays(ws, 6), now = nowCaracas();
+    var L = lotById(state.lottery);
+    var out = '<div class="datehead"><h2>Semana del ' + esc(rangeFmt.format(new Date(toMs(ws)))) + ' al ' + esc(rangeFmt.format(new Date(toMs(we)))) + '</h2><span>' + esc(L.name) + logoImg(L) + '</span></div>';
+    out += '<div class="chips" role="group" aria-label="Lotería">' + LOTTERIES.map(function (x) {
+      return '<button type="button" class="chip c" style="' + lst(x) + '" data-lot="' + x.id + '" aria-pressed="' + (x.id === state.lottery) + '">' + esc(x.name) + '</button>';
+    }).join('') + '</div>';
+
+    var days = []; for (var i = 0; i < 7; i++) days.push(addDays(ws, i));
+    out += '<div class="scroller" tabindex="0" aria-label="Tablero semanal"><div class="grid week c" style="' + lst(L) + '"><div class="corner"></div>';
+    days.forEach(function (d) {
+      var dt = new Date(toMs(d));
+      out += '<div class="hcell' + (d === now.date ? ' today' : '') + '">' + esc(shortDow.format(dt).replace('.', '')) + '<small>' + esc(dayNum.format(dt)) + '</small></div>';
+    });
+    var times = slotsOf(L.id), nm = now.h * 60 + now.m, nowRow = -1;
+    times.forEach(function (t) { if (t <= nm) nowRow = t; });
+    times.forEach(function (t) {
+      out += '<div class="tcell' + (days.indexOf(now.date) >= 0 && t === nowRow ? ' now' : '') + '">' + fmtTime(t) + '</div>';
+      days.forEach(function (d) {
+        out += cellHTML(L, d, t, { isToday: d === now.date, isFuture: d > now.date, nm: nm, isNow: d === now.date && t === nowRow, name: false });
+      });
+    });
+    out += '</div></div>';
+
+    var counts = {}, total = 0;
+    var ts = slotsOf(L.id);
+    days.forEach(function (d) { ts.forEach(function (t) { var n = getRes(d, L.id, t); if (n !== undefined) { counts[n] = (counts[n] || 0) + 1; total++; } }); });
+    out += '<section class="freq c" style="' + lst(L) + '"><h2>Animales más repetidos de la semana</h2>';
+    if (!total) {
+      out += '<p class="muted">Todavía no hay resultados esta semana para ' + esc(L.name) + '.</p>';
+    } else {
+      var top = Object.keys(counts).map(Number).sort(function (a, b) { return counts[b] - counts[a] || a - b; }).slice(0, 6);
+      var max = counts[top[0]];
+      out += '<ol>' + top.map(function (n) {
+        return '<li><span class="bar2" style="width:' + Math.round(counts[n] / max * 100) + '%"></span><span class="emo" aria-hidden="true">' + listFor(L.id)[n][1] + '</span><span class="num">' + labelOf(L.id, n) + '</span><span class="nm">' + esc(listFor(L.id)[n][0]) + '</span><span class="ct">×' + counts[n] + '</span></li>';
+      }).join('') + '</ol><p class="muted">' + total + ' resultados cargados en la semana.</p>';
+    }
+    out += '</section>';
+    return out;
+  }
+
+  function tvHTML() {
+    var d = state.date, now = nowCaracas(), isToday = d === now.date, nm = now.h * 60 + now.m;
+    var out = state.tv ? '' : '<div class="datehead"><h2>' + esc(fmtLong(d)) + '</h2><span>' + (isToday ? 'Hoy' : d > now.date ? 'Aún no sortea' : 'Sorteos anteriores') + '</span></div>';
+    out += '<div class="tvgrid">' + LOTTERIES.map(function (L) {
+      var ts = slotsOf(L.id), r = latestFor(L.id, d), next = null;
+      if (isToday) { for (var i = 0; i < ts.length; i++) { if (ts[i] > nm) { next = ts[i]; break; } } }
+      var sub = !isToday ? '' : next !== null ? 'Próximo ' + fmtTime(next) : 'Sorteos de hoy completos';
+      var big = r
+        ? '<span class="bigemo" aria-hidden="true">' + listFor(L.id)[r.n][1] + '</span><div class="bigtxt"><b class="bignum">' + labelOf(L.id, r.n) + '</b><span class="bigname">' + esc(listFor(L.id)[r.n][0]) + '</span><span class="bigtime">Sorteo de las ' + fmtTime(r.t) + '</span></div>'
+        : '<span class="bigemo off" aria-hidden="true">🎯</span><div class="bigtxt"><b class="bignum">—</b><span class="bigname">Esperando sorteo</span></div>';
+      var chips = ts.map(function (t) {
+        var n = getRes(d, L.id, t), cur = r && r.t === t;
+        return '<li class="' + (n !== undefined ? 'has' : '') + (cur ? ' cur' : '') + '"><i>' + fmtTime(t) + '</i>' + (n !== undefined ? '<b><span aria-hidden="true">' + listFor(L.id)[n][1] + '</span> ' + labelOf(L.id, n) + '</b>' : '<b>—</b>') + '</li>';
+      }).join('');
+      return '<article class="tvcard c" style="' + lst(L) + '"><header><h3>' + logoImg(L) + '<span>' + esc(L.name) + '</span></h3><span>' + esc(sub) + '</span></header><div class="tvmain">' + big + '</div><ol class="tvchips">' + chips + '</ol></article>';
+    }).join('') + '</div>';
+    return out;
+  }
+
+  function triplesHTML() {
+    var d = state.date, now = nowCaracas(), isToday = d === now.date, nm = now.h * 60 + now.m;
+    var list = enabledTriples();
+    var out = state.tv ? '' : '<div class="datehead"><h2>' + esc(fmtLong(d)) + '</h2><span>' + (isToday ? 'Hoy' : d > now.date ? 'Aún no sortea' : 'Sorteos anteriores') + '</span></div>';
+    if (!list.length) return out + '<p class="muted">No hay triples activos. Actívalos con el botón «Triples».</p>';
+    var n = list.length, cols = n <= 3 ? n : n === 4 ? 2 : n <= 6 ? 3 : 4, rows = Math.ceil(n / cols);
+    var editable = canWrite && !state.tv;
+    out += '<div class="tvgrid trip" style="--cols:' + cols + ';--rows:' + rows + '" data-cols="' + cols + '" data-rows="' + rows + '">' + list.map(function (T) {
+      var c = tcfg[T.id], ts = c.ts, r = latestTri(T.id, d), next = null;
+      if (isToday) { for (var i = 0; i < ts.length; i++) { if (ts[i] > nm) { next = ts[i]; break; } } }
+      var sub = !ts.length ? 'Sin horarios' : !isToday ? '' : next !== null ? 'Próximo ' + fmtTime(next) : 'Sorteos de hoy completos';
+      var big;
+      if (r) {
+        var sg = r.z >= 0 && SIGNS[r.z] ? SIGNS[r.z] : null;
+        big = (sg ? '<span class="bigemo" aria-hidden="true">' + sg[1] + '</span>' : '') +
+          '<div class="bigtxt"><b class="bignum">' + pad3(r.n) + '</b>' + (sg ? '<span class="bigname">' + esc(sg[0]) + '</span>' : '') + '<span class="bigtime">Sorteo de las ' + fmtTime(r.t) + '</span></div>';
+      } else {
+        big = '<span class="bigemo off" aria-hidden="true">🎲</span><div class="bigtxt"><b class="bignum">---</b><span class="bigname">Esperando sorteo</span></div>';
+      }
+      var chips = ts.map(function (t) {
+        var x = getTri(d, T.id, t), cur = r && r.t === t, sg2 = x && x.z >= 0 && SIGNS[x.z] ? SIGNS[x.z][1] : '';
+        var attrs = editable ? ' data-tg="' + T.id + '" data-t="' + t + '" data-d="' + d + '" role="button" tabindex="0" aria-label="' + esc(c.n + ', ' + fmtTime(t) + (x ? ', ' + pad3(x.n) : ', sin resultado')) + '"' : '';
+        return '<li class="' + (x ? 'has' : '') + (cur ? ' cur' : '') + '"' + attrs + '><i>' + fmtTime(t) + '</i>' + (x ? '<b>' + pad3(x.n) + ' <span aria-hidden="true">' + sg2 + '</span></b>' : '<b>—</b>') + '</li>';
+      }).join('');
+      return '<article class="tvcard trip c" style="--h:' + T.h + '"><header><h3><span>' + esc(c.n) + '</span></h3><span>' + esc(sub) + '</span></header><div class="tvmain">' + big + '</div><ol class="tvchips">' + chips + '</ol></article>';
+    }).join('') + '</div>';
+    if (editable) out += '<p class="muted">Toca una hora para cargar o corregir el resultado.</p>';
+    return out;
+  }
+
+  function renderBoard() {
+    board.style.setProperty('--zoom', state.zoom);
+    board.classList.toggle('tvview', state.view === 'tv' || state.view === 'triples');
+    board.innerHTML = state.view === 'day' ? dayHTML() : state.view === 'week' ? weekHTML() : state.view === 'triples' ? triplesHTML() : (state.tv && state.slide === 'triples') ? triplesHTML() : tvHTML();
+  }
+  function renderBar() {
+    $('tabDay').setAttribute('aria-pressed', state.view === 'day');
+    $('tabWeek').setAttribute('aria-pressed', state.view === 'week');
+    $('tabTV').setAttribute('aria-pressed', state.view === 'tv');
+    $('tabTri').setAttribute('aria-pressed', state.view === 'triples');
+    $('btnTri').hidden = !canWrite;
+    $('brandSub').textContent = 'Resultados de ' + ((state.view === 'triples' || (state.tv && state.slide === 'triples')) ? 'triples' : 'animalitos') + ', hora de Caracas';
+    $('progLabel').textContent = state.slide === 'triples' ? 'Triples' : 'Animalitos';
+    $('dateInput').value = state.date;
+    $('btnSlots').hidden = !canWrite;
+    $('btnAds').hidden = !canWrite;
+    var live = $('live');
+    live.classList.toggle('on', mode === 'shared' && !syncError);
+    $('liveText').textContent = mode === 'shared' ? (syncError ? 'Sin conexión' : 'En vivo') : 'Solo en este navegador';
+    var msg = '', warn = false;
+    if (mode === 'local') msg = 'Modo local: lo que cargues se guarda solo en este navegador.';
+    else if (!canWrite) msg = window.__PZ_QUIET ? '' : 'Solo lectura: tu acceso no permite cargar resultados.';
+    else if (syncError) { msg = 'No se pudo sincronizar. Revisa tu conexión y vuelve a abrir la página.'; warn = true; }
+    note.hidden = !msg; note.textContent = msg; note.classList.toggle('warn', warn);
+  }
+  // En pantalla completa, ajusta el tamaño de letra para que las 8 tarjetas quepan sin cortes, con o sin publicidad.
+  function fitTV() {
+    if (!state.tv || state.view !== 'tv' || window.innerWidth <= 1000) { board.style.removeProperty('font-size'); return; }
+    var g = board.querySelector('.tvgrid'), cols = g && +g.getAttribute('data-cols') || 4, rows = g && +g.getAttribute('data-rows') || 2;
+    var cardH = board.clientHeight / rows - 8, cardW = board.clientWidth / cols - 12;
+    if (cardH <= 0 || cardW <= 0) return;
+    board.style.fontSize = (Math.min(cardH / 22, cardW / 26) * state.zoom).toFixed(2) + 'px';
+  }
+  window.addEventListener('resize', fitTV);
+  document.addEventListener('fullscreenchange', function () { setTimeout(fitTV, 60); });
+  function render() { renderBar(); renderBoard(); renderAds(); fitTV(); }
+
+  /* ---------- Clock ---------- */
+  var lastTick = '';
+  function tick() {
+    var n = nowCaracas();
+    $('clockTime').textContent = pad(n.h) + ':' + pad(n.m) + ':' + pad(n.s);
+    $('clockDate').textContent = fmtLong(n.date);
+    if (state.tv && state.date !== n.date) { state.date = n.date; subscribeWeek(); render(); }
+    var sig = n.date + ':' + n.h + (state.view === 'tv' || state.view === 'triples' ? ':' + n.m : '');
+    if (sig !== lastTick) { var first = lastTick === ''; lastTick = sig; if (!first) renderBoard(); }
+  }
+
+  /* ---------- Data layer ---------- */
+  function subscribeWeek() {
+    if (!db) return;
+    var ws = weekStart(state.date), k = ws;
+    if (k === subKey) return;
+    subKey = k;
+    if (unsubRes) unsubRes();
+    var q = db.collection('results').where('d', '>=', ws).where('d', '<=', addDays(ws, 6)).limit(1000);
+    unsubRes = q.onSnapshot(function (snap) {
+      var m = new Map();
+      snap.docs.forEach(function (doc) {
+        var v = doc.data() || {};
+        var n = Number(v.n), t = Number(v.t);
+        if (typeof v.d !== 'string' || typeof v.g !== 'string' || !validDate(v.d) || !lotById(v.g)) return;
+        if (!(n >= 0 && n < listFor(v.g).length && Number.isInteger(n)) || !Number.isInteger(t) || t < 0 || t > 1439) return;
+        m.set(key(v.d, v.g, t), n);
+      });
+      remote = m; syncError = false; render();
+    }, function () { syncError = true; render(); });
+    if (unsubTri) unsubTri();
+    var q2 = db.collection('triples').where('d', '>=', ws).where('d', '<=', addDays(ws, 6)).limit(1000);
+    unsubTri = q2.onSnapshot(function (snap) {
+      var m2 = new Map();
+      snap.docs.forEach(function (doc) {
+        var v = doc.data() || {}, n = Number(v.n), t = Number(v.t), z = v.z === undefined ? -1 : Number(v.z);
+        if (typeof v.d !== 'string' || typeof v.g !== 'string' || !validDate(v.d) || !triById(v.g)) return;
+        if (!Number.isInteger(n) || n < 0 || n > 999 || !Number.isInteger(t) || t < 0 || t > 1439 || !Number.isInteger(z) || z < -1 || z > 11) return;
+        m2.set(key(v.d, v.g, t), { n: n, z: z });
+      });
+      tremote = m2; render();
+    }, function () {});
+  }
+
+  async function saveResult(d, g, t, n) {
+    if (mode === 'shared') {
+      var ref = db.doc('results/' + key(d, g, t));
+      try {
+        if (n === null) await ref.delete(); else await ref.set({ d: d, g: g, t: t, n: n });
+      } catch (e) {
+        if (e && e.code === 'invalid_argument') { canWrite = false; render(); toast('Tu acceso no permite cargar resultados.'); }
+        else toast('No se pudo guardar. Intenta de nuevo.');
+      }
+    } else {
+      if (n === null) delete local[key(d, g, t)]; else local[key(d, g, t)] = n;
+      store('pizarra-animaltec.local', local); render();
+    }
+  }
+
+  async function saveTriple(d, g, t, n, z) {
+    if (mode === 'shared') {
+      var ref = db.doc('triples/' + key(d, g, t));
+      try {
+        if (n === null) await ref.delete(); else await ref.set({ d: d, g: g, t: t, n: n, z: z });
+      } catch (e) {
+        if (e && e.code === 'invalid_argument') { canWrite = false; render(); toast('Tu acceso no permite cargar resultados.'); }
+        else toast('No se pudo guardar. Intenta de nuevo.');
+      }
+    } else {
+      if (n === null) delete tlocal[key(d, g, t)]; else tlocal[key(d, g, t)] = { n: n, z: z };
+      store('pizarra-animaltec.triples.local', tlocal); render();
+    }
+  }
+
+  async function saveTcfg(next) {
+    applyTcfg(next);
+    store('pizarra-animaltec.triples.cfg', { c: tcfg, r: rot });
+    if (mode === 'shared') {
+      try { await db.doc('config/triples').set({ c: tcfg, r: rot }); }
+      catch (e) { toast('La configuración de triples se aplicó solo en este navegador.'); }
+    }
+    startRot(); render();
+  }
+
+  /* ---------- Alternar pizarras (diapositivas) en pantalla completa ---------- */
+  function rotActive() { return state.tv && rot.on && !state.tvFixed && enabledTriples().length > 0; }
+  function stopRot() { clearTimeout(rotTimer); rotTimer = null; }
+  function startRot() {
+    stopRot();
+    var pr = $('prog');
+    if (!rotActive()) { if (state.tv && !state.tvFixed) state.slide = 'animals'; pr.hidden = true; pr.classList.remove('run'); return; }
+    var sec = state.slide === 'animals' ? rot.a : rot.t;
+    pr.hidden = false; pr.style.setProperty('--dur', sec + 's');
+    pr.classList.remove('run'); void pr.offsetWidth; pr.classList.add('run');
+    rotTimer = setTimeout(function () {
+      state.slide = state.slide === 'animals' ? 'triples' : 'animals';
+      board.classList.remove('fadein'); void board.offsetWidth; board.classList.add('fadein');
+      render(); startRot();
+    }, sec * 1000);
+  }
+
+  async function saveSched(next) {
+    applySched(next);
+    store('pizarra-animaltec.sched', sched);
+    if (mode === 'shared') {
+      try { await db.doc('config/schedule').set({ s: sched }); }
+      catch (e) { toast('El horario se aplicó solo en este navegador.'); }
+    }
+    render();
+  }
+
+  /* ---------- Modals ---------- */
+  var lastFocus = null;
+  function openModal(html, cls) {
+    lastFocus = document.activeElement;
+    $('modal').className = 'modal' + (cls ? ' ' + cls : '');
+    $('panel').innerHTML = html; $('modal').hidden = false;
+    var f = $('panel').querySelector('input, select, button'); if (f) f.focus();
+  }
+  function closeModal() {
+    $('modal').hidden = true; $('modal').className = 'modal'; $('panel').innerHTML = ''; picker = null; tpick = null;
+    if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
+  }
+
+  function picksHTML(filter) {
+    var f = plain(filter || '').trim();
+    var g = picker ? picker.g : LOTTERIES[0].id, list = listFor(g);
+    var cur = picker ? getRes(picker.d, picker.g, picker.t) : undefined;
+    var order = list.map(function (_, i) { return i; });
+    var z = zeroIdx(g); if (z >= 0) order = [z].concat(order.slice(0, z), order.slice(z + 1));
+    var items = [];
+    order.forEach(function (n) {
+      var a = list[n], lab = labelOf(g, n);
+      if (f && plain(a[0]).indexOf(f) < 0 && lab !== f && !(/^\d+$/.test(f) && lab !== '00' && f !== '00' && Number(lab) === Number(f))) return;
+      items.push('<button type="button" class="pick" data-n="' + n + '" aria-pressed="' + (cur === n) + '"><span class="emo" aria-hidden="true">' + a[1] + '</span><span class="num">' + lab + '</span><span class="nm">' + esc(a[0]) + '</span></button>');
+    });
+    return items.length ? items.join('') : '<p class="muted">No hay animales con esa búsqueda.</p>';
+  }
+
+  function openPicker(d, g, t) {
+    var L = lotById(g); if (!L) return;
+    picker = { d: d, g: g, t: t };
+    var has = getRes(d, g, t) !== undefined;
+    openModal(
+      '<header><div><h3 id="mTitle">' + esc(L.name) + '</h3><p>' + esc(fmtTime(t)) + ' · ' + esc(fmtLong(d)) + '</p></div><button type="button" class="btn" data-close>Cerrar</button></header>' +
+      '<div class="c" style="' + lst(L) + '"><input type="search" id="pickSearch" placeholder="Buscar por número o nombre" aria-label="Buscar animal" autocomplete="off" style="width:100%"></div>' +
+      '<div class="picks c" id="picks" style="' + lst(L) + '">' + picksHTML('') + '</div>' +
+      '<div class="row">' + (has ? '<button type="button" class="btn" data-clear>Quitar resultado</button>' : '') + '<span class="muted">El 00 es la Ballena.</span></div>'
+    );
+  }
+
+  function openTriplePicker(d, g, t) {
+    var T = triById(g); if (!T) return;
+    var cur = getTri(d, g, t);
+    tpick = { d: d, g: g, t: t, z: cur ? cur.z : -1 };
+    openModal(
+      '<header><div><h3 id="mTitle">' + esc(tcfg[g].n) + '</h3><p>' + esc(fmtTime(t)) + ' · ' + esc(fmtLong(d)) + '</p></div><button type="button" class="btn" data-close>Cerrar</button></header>' +
+      '<div class="c" style="--h:' + T.h + '"><label class="muted" for="triNum">Número de 3 cifras</label><input type="text" id="triNum" class="tri-num" inputmode="numeric" pattern="[0-9]*" maxlength="3" autocomplete="off" placeholder="000" value="' + (cur ? pad3(cur.n) : '') + '"></div>' +
+      '<div><p class="muted" style="margin-bottom:6px">Signo (opcional)</p><div class="picks c" id="signs" style="--h:' + T.h + '">' + signsHTML() + '</div></div>' +
+      '<div class="row"><button type="button" class="btn primary" data-savetri>Guardar</button>' + (cur ? '<button type="button" class="btn" data-cleartri>Quitar resultado</button>' : '') + '<span class="muted" id="triMsg"></span></div>'
+    );
+    var f = $('triNum'); if (f) { f.focus(); f.select(); }
+  }
+  function signsHTML() {
+    return SIGNS.map(function (z, i) {
+      return '<button type="button" class="pick" data-z="' + i + '" aria-pressed="' + (tpick && tpick.z === i) + '"><span class="emo" aria-hidden="true">' + z[1] + '</span><span class="nm">' + esc(z[0]) + '</span></button>';
+    }).join('');
+  }
+  function submitTriple() {
+    if (!tpick) return;
+    var v = ($('triNum').value || '').trim();
+    if (!/^\d{3}$/.test(v)) { $('triMsg').textContent = 'Escribe las 3 cifras, por ejemplo 047.'; return; }
+    var p = tpick; closeModal(); saveTriple(p.d, p.g, p.t, +v, p.z);
+  }
+
+  function openTriples() {
+    var tmin = function (v) { return pad(Math.floor(v / 60)) + ':' + pad(v % 60); };
+    var rows = TRIPLES.map(function (T) {
+      var c = tcfg[T.id], times = '';
+      for (var i = 0; i < 5; i++) times += '<input type="time" data-tt="' + T.id + '" value="' + (c.ts[i] !== undefined ? tmin(c.ts[i]) : '') + '" aria-label="Hora ' + (i + 1) + ' de ' + esc(c.n) + '">';
+      return '<div class="schedrow c trow" style="--h:' + T.h + '"><label class="inl" style="display:flex;align-items:center;gap:8px"><input type="checkbox" data-ton="' + T.id + '"' + (c.on ? ' checked' : '') + '> Mostrar</label>' +
+        '<label>Nombre<input type="text" data-tn="' + T.id + '" value="' + esc(c.n) + '" maxlength="40"></label><div class="times">' + times + '</div></div>';
+    }).join('');
+    openModal(
+      '<header><div><h3 id="mTitle">Triples</h3><p style="text-transform:none">Elige cuáles se muestran, su nombre y la hora de cada sorteo (hasta 5 por triple; deja vacía la que no uses).</p></div><button type="button" class="btn" data-close>Cerrar</button></header>' +
+      '<section class="lk"><h4>Alternar pizarras en pantalla completa</h4>' +
+      '<label class="inl"><span>Cambiar solo entre Animalitos y Triples</span><input type="checkbox" id="rotOn"' + (rot.on ? ' checked' : '') + '></label>' +
+      '<div class="two"><label>Segundos con animalitos<input type="number" id="rotA" min="5" max="300" value="' + rot.a + '"></label><label>Segundos con triples<input type="number" id="rotT" min="5" max="300" value="' + rot.t + '"></label></div></section>' +
+      rows +
+      '<div class="row"><button type="button" class="btn primary" data-savetcfg>Guardar</button><span class="muted" id="tcfgMsg"></span></div>'
+    );
+  }
+
+  function openSlots() {
+    var tOpts = function (sel) { var s = ''; for (var t = 300; t <= 1410; t += 15) s += '<option value="' + t + '"' + (t === sel ? ' selected' : '') + '>' + fmtTime(t) + '</option>'; return s; };
+    var rows = LOTTERIES.map(function (L) {
+      var s = sched[L.id];
+      return '<div class="schedrow c" style="' + lst(L) + '"><b>' + esc(L.name) + '</b><label>Primer sorteo<select data-sf="' + L.id + '">' + tOpts(s.from) + '</select></label><label>Último sorteo<select data-st="' + L.id + '">' + tOpts(s.to) + '</select></label></div>';
+    }).join('');
+    openModal(
+      '<header><div><h3 id="mTitle">Horarios por lotería</h3><p style="text-transform:none">Hay un sorteo cada hora entre el primero y el último.</p></div><button type="button" class="btn" data-close>Cerrar</button></header>' +
+      rows +
+      '<div class="row"><button type="button" class="btn primary" data-saveslots>Guardar</button><span class="muted" id="slotMsg"></span></div>'
+    );
+  }
+
+  var toastTimer;
+  function toast(msg) {
+    var t = $('toast'); t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.hidden = true; }, 3500);
+  }
+
+  /* ---------- Events ---------- */
+  var HASH = { day: 'diario', week: 'semanal', tv: 'pantalla', triples: 'triples' };
+  function setView(v) { state.view = v; try { history.replaceState(null, '', '#' + HASH[v]); } catch (e) { location.hash = HASH[v]; } subscribeWeek(); render(); }
+  function moveDate(delta) { state.date = addDays(state.date, delta * (state.view === 'week' ? 7 : 1)); subscribeWeek(); render(); }
+
+  $('tabDay').addEventListener('click', function () { setView('day'); });
+  $('tabWeek').addEventListener('click', function () { setView('week'); });
+  $('tabTV').addEventListener('click', function () { setView('tv'); });
+  $('tabTri').addEventListener('click', function () { setView('triples'); });
+  $('btnTri').addEventListener('click', openTriples);
+  $('prev').addEventListener('click', function () { moveDate(-1); });
+  $('next').addEventListener('click', function () { moveDate(1); });
+  $('today').addEventListener('click', function () { state.date = nowCaracas().date; subscribeWeek(); render(); });
+  $('dateInput').addEventListener('change', function (e) { if (validDate(e.target.value)) { state.date = e.target.value; subscribeWeek(); render(); } });
+  function setZoom(z) { state.zoom = Math.max(.8, Math.min(2, Math.round(z * 100) / 100)); store('pizarra-animaltec.zoom', state.zoom); renderBoard(); }
+  $('zoomIn').addEventListener('click', function () { setZoom(state.zoom + .15); });
+  $('zoomOut').addEventListener('click', function () { setZoom(state.zoom - .15); });
+  $('btnSlots').addEventListener('click', openSlots);
+  $('btnLook').addEventListener('click', openLook);
+  $('btnAds').addEventListener('click', openAds);
+
+  var prevView = 'day';
+  async function enterTV() {
+    prevView = state.view;
+    state.tvFixed = prevView === 'triples' ? 'triples' : null;   // desde la pestaña Triples: pantalla fija solo de triples
+    state.slide = state.tvFixed || 'animals';
+    state.tv = true; state.view = 'tv'; state.date = nowCaracas().date;
+    app.classList.add('tv'); document.documentElement.classList.add('tvroot');
+    subscribeWeek(); render(); startRot();
+    try { await app.requestFullscreen(); } catch (e) {}
+    try { if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(function () {}); } catch (e) {}
+  }
+  function leaveTV() {
+    if (!state.tv) return;
+    state.tv = false; app.classList.remove('tv'); document.documentElement.classList.remove('tvroot');
+    stopRot(); $('prog').hidden = true; state.slide = 'animals'; state.tvFixed = null;
+    state.view = prevView; render();
+  }
+  function exitTV() {
+    if (document.fullscreenElement) { try { document.exitFullscreen().catch(function () {}); } catch (e) {} }
+    leaveTV();
+  }
+  $('btnTV').addEventListener('click', enterTV);
+  $('exitTV').addEventListener('click', exitTV);
+  document.addEventListener('fullscreenchange', function () { if (!document.fullscreenElement && state.tv) leaveTV(); });
+
+  board.addEventListener('click', function (e) {
+    var chip = e.target.closest('[data-lot]');
+    if (chip) { state.lottery = chip.getAttribute('data-lot'); renderBoard(); return; }
+    var tc = e.target.closest('[data-tg]');
+    if (tc && canWrite && !state.tv) { openTriplePicker(tc.getAttribute('data-d'), tc.getAttribute('data-tg'), +tc.getAttribute('data-t')); return; }
+    var cell = e.target.closest('button.cell');
+    if (cell && canWrite) openPicker(cell.getAttribute('data-d'), cell.getAttribute('data-g'), +cell.getAttribute('data-t'));
+  });
+
+  board.addEventListener('keydown', function (e) {
+    var tc = e.target.closest && e.target.closest('[data-tg]');
+    if (tc && (e.key === 'Enter' || e.key === ' ') && canWrite && !state.tv) { e.preventDefault(); openTriplePicker(tc.getAttribute('data-d'), tc.getAttribute('data-tg'), +tc.getAttribute('data-t')); }
+  });
+
+  $('modal').addEventListener('click', function (e) {
+    if (e.target === $('modal') || e.target.closest('[data-close]')) { closeModal(); return; }
+    var sg = e.target.closest('[data-z]');
+    if (sg && tpick) { var zi = +sg.getAttribute('data-z'); tpick.z = tpick.z === zi ? -1 : zi; $('signs').innerHTML = signsHTML(); return; }
+    if (e.target.closest('[data-savetri]')) { submitTriple(); return; }
+    if (e.target.closest('[data-cleartri]') && tpick) { var tq = tpick; closeModal(); saveTriple(tq.d, tq.g, tq.t, null); return; }
+    if (e.target.closest('[data-savetcfg]')) {
+      var c = {}, bad = '';
+      TRIPLES.forEach(function (T) {
+        var nm = $('panel').querySelector('[data-tn="' + T.id + '"]').value.trim();
+        var on = $('panel').querySelector('[data-ton="' + T.id + '"]').checked;
+        var ts = [];
+        $('panel').querySelectorAll('[data-tt="' + T.id + '"]').forEach(function (inp) { if (/^\d{2}:\d{2}$/.test(inp.value)) ts.push(+inp.value.slice(0, 2) * 60 + +inp.value.slice(3)); });
+        if (!nm) bad = 'Todos los triples necesitan un nombre.';
+        c[T.id] = { n: nm, on: on, ts: ts };
+      });
+      var ra = +$('rotA').value, rt = +$('rotT').value;
+      if (!(ra >= 5 && ra <= 300 && rt >= 5 && rt <= 300) || !Number.isInteger(ra) || !Number.isInteger(rt)) bad = 'Los segundos deben estar entre 5 y 300.';
+      if (bad) { $('tcfgMsg').textContent = bad; return; }
+      var rotOn = $('rotOn').checked;   // leer antes de cerrar: closeModal vacía el panel
+      closeModal(); saveTcfg({ c: c, r: { on: rotOn, a: ra, t: rt } });
+      return;
+    }
+    var pick = e.target.closest('.pick');
+    if (pick && picker) { var p = picker; closeModal(); saveResult(p.d, p.g, p.t, +pick.getAttribute('data-n')); return; }
+    if (e.target.closest('[data-clear]') && picker) { var q = picker; closeModal(); saveResult(q.d, q.g, q.t, null); return; }
+    var ac = e.target.closest('[data-adclear]');
+    if (ac) { var aid = ac.getAttribute('data-adclear'), ad = ads.filter(function (x) { return x.id === aid; })[0]; if (ad) saveAdDoc(ad, true); return; }
+    var lc = e.target.closest('[data-logoclear]'); if (lc) { saveLogo(lc.getAttribute('data-logoclear'), null); return; }
+    var pr = e.target.closest('[data-preset]'); if (pr) { applyPreset(pr.getAttribute('data-preset')); return; }
+    if (e.target.closest('[data-resetchalk]')) { look.chalk = {}; saveLook(); renderBoard(); syncLookInputs(); return; }
+    if (e.target.closest('[data-resetlook]')) { resetLook(); return; }
+    if (e.target.closest('[data-saveslots]')) {
+      var next = {}, bad = '';
+      LOTTERIES.forEach(function (L) {
+        var f = +$('panel').querySelector('[data-sf="' + L.id + '"]').value, t2 = +$('panel').querySelector('[data-st="' + L.id + '"]').value;
+        if (f > t2) bad = L.name;
+        next[L.id] = { from: f, to: t2 };
+      });
+      if (bad) { $('slotMsg').textContent = 'En ' + bad + ' el primer sorteo debe ser antes del último.'; return; }
+      closeModal(); saveSched(next);
+    }
+  });
+  $('modal').addEventListener('change', function (e) {
+    var tt = e.target;
+    if (tt.id === 'adSec') { saveAdSec(+tt.value); return; }
+    if (tt.hasAttribute && tt.hasAttribute('data-adlink')) {
+      var lid = tt.getAttribute('data-adlink'), la = ads.filter(function (x) { return x.id === lid; })[0], link = tt.value.trim();
+      if (!la) return;
+      if (!okLink(link)) { toast('El enlace debe empezar con http:// o https://'); tt.value = la.l || ''; return; }
+      saveAdDoc(Object.assign({}, la, { l: link })); return;
+    }
+    if (tt.hasAttribute && tt.hasAttribute('data-adfile')) {
+      var zone = tt.getAttribute('data-adfile'), file = tt.files && tt.files[0];
+      if (!file) return;
+      if (!/^image\//.test(file.type)) { toast('Elige un archivo de imagen.'); tt.value = ''; return; }
+      if (adsIn(zone).length >= 6) { toast('Cada zona admite hasta 6 anuncios.'); tt.value = ''; return; }
+      var tryQ = function (maxW, maxH, q) {
+        return resizeLogo(file, maxW, maxH, q).then(function (u) { return okLogo(u) ? u : (q > .5 ? tryQ(Math.round(maxW * .8), Math.round(maxH * .8), q - .15) : Promise.reject(new Error('size'))); });
+      };
+      tryQ(2000, 400, .85).then(function (u) {
+        var now = Date.now();
+        return saveAdDoc({ id: 'a' + now.toString(36) + Math.random().toString(36).slice(2, 6), z: zone, u: u, l: '', o: now, _new: true });
+      }).catch(function () { toast('No se pudo usar esa imagen. Prueba con otra.'); });
+      return;
+    }
+    var t = e.target, id = t.getAttribute && t.getAttribute('data-logo');
+    if (!id || !t.files || !t.files[0]) return;
+    var f = t.files[0];
+    if (!/^image\//.test(f.type)) { toast('Elige un archivo de imagen.'); t.value = ''; return; }
+    resizeLogo(f).then(function (u) { if (!okLogo(u)) throw new Error('size'); return saveLogo(id, u); })
+      .catch(function () { toast('No se pudo usar esa imagen. Prueba con otra.'); });
+  });
+  $('modal').addEventListener('input', function (e) {
+    if (onLookInput(e)) return;
+    if (e.target.id === 'pickSearch') $('picks').innerHTML = picksHTML(e.target.value);
+    if (e.target.id === 'triNum') e.target.value = e.target.value.replace(/\D/g, '').slice(0, 3);
+  });
+  $('modal').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && e.target.id === 'triNum') { e.preventDefault(); submitTriple(); return; }
+    if (e.key === 'Enter' && e.target.id === 'pickSearch') {
+      var btns = $('picks').querySelectorAll('.pick');
+      if (btns.length === 1 && picker) { var p = picker; var n = +btns[0].getAttribute('data-n'); closeModal(); saveResult(p.d, p.g, p.t, n); }
+    }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !$('modal').hidden) closeModal();
+    if (state.tv && $('modal').hidden) {
+      if (e.key === '+' || e.key === '=') setZoom(state.zoom + .1);
+      if (e.key === '-') setZoom(state.zoom - .1);
+    }
+  });
+
+  window.addEventListener('hashchange', function () {
+    var v = location.hash === '#semanal' ? 'week' : location.hash === '#diario' ? 'day' : location.hash === '#pantalla' ? 'tv' : location.hash === '#triples' ? 'triples' : null;
+    if (v && v !== state.view) { state.view = v; subscribeWeek(); render(); }
+  });
+
+  /* ---------- Boot ---------- */
+  var startHash = window.__PZ_HASH || location.hash;
+  if (startHash === '#semanal') state.view = 'week'; else if (startHash === '#pantalla') state.view = 'tv'; else if (startHash === '#triples') state.view = 'triples';
+  applyLook();
+  tick(); render(); restartAdTimer();
+  setInterval(tick, 1000);
+
+  (async function connect() {
+    try {
+      if (!window.claude || !window.claude.use) { render(); return; }
+      var res = await Promise.all([window.claude.use('db'), window.claude.use('user')]);
+      db = res[0]; var user = res[1];
+      if (!db) { render(); return; }
+      mode = 'shared';
+      if (user && typeof user.can === 'function') { var w = await user.can('data.write'); if (w === false) canWrite = false; }
+      db.doc('config/schedule').onSnapshot(function (snap) {
+        var v = snap.exists ? snap.data() : null;
+        if (v && v.s && typeof v.s === 'object') { applySched(v.s); render(); }
+      }, function () {});
+      db.doc('config/triples').onSnapshot(function (snap) {
+        var v = snap.exists ? snap.data() : null;
+        if (v && typeof v === 'object') { applyTcfg(v); startRot(); render(); }
+      }, function () {});
+      db.collection('logos').limit(50).onSnapshot(function (snap) {
+        var m = {};
+        snap.docs.forEach(function (doc) { var v = doc.data() || {}; if (lotById(doc.id) && okLogo(v.u)) m[doc.id] = v.u; });
+        logosShared = m; mergeLogos(); renderBoard(); refreshLogoRows();
+      }, function () {});
+      db.collection('ads').limit(40).onSnapshot(function (snap) {
+        adsShared = snap.docs.map(function (doc) { var v = doc.data() || {}; return { id: doc.id, z: v.z, u: v.u, l: typeof v.l === 'string' ? v.l : '', o: Number(v.o) || 0 }; }).filter(function (a) { return okAd(a) && okLink(a.l); });
+        mergeAds(); renderAds(); refreshAdRows();
+      }, function () {});
+      db.doc('config/adsettings').onSnapshot(function (snap) {
+        var v = snap.exists ? snap.data() : null;
+        if (v && Number(v.sec) >= 3 && Number(v.sec) <= 600) { adSec = Number(v.sec); restartAdTimer(); }
+      }, function () {});
+      subscribeWeek();
+      render();
+    } catch (e) { mode = 'local'; db = null; render(); }
+  })();
+})();
+</script>

@@ -1,0 +1,5 @@
+/* Pop-up de publicidad: capa centrada, fondo oscuro semitransparente, por encima de todo (z 50). */
+.pub-overlay { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(0, 0, 0, .7); opacity: 0; transition: opacity .5s; cursor: pointer; }
+.pub-overlay.pub-in { opacity: 1; }
+.pub-img { max-height: 90vh; max-width: 92vw; object-fit: contain; border-radius: 16px; box-shadow: 0 25px 50px rgba(0, 0, 0, .5); }
+@media (prefers-reduced-motion: reduce) { .pub-overlay { transition: none; } }

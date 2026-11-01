@@ -1,38 +1,81 @@
-# Sistema de licencias para la Pizarra Animaltec
+# Resultados en vivo · Pizarra Animaltec para alquilar
 
-Activa o suspende pantallas de clientes según su pago, con Supabase.
+Una sola página web para **alquilar el servicio de resultados en vivo** a agencias:
+
+- **Pizarra** de animalitos y de triples, que alterna sola en pantalla completa.
+- **Licencias**: cada agencia necesita una licencia activa; tú la activas, la renuevas o la suspendes.
+- **Publicidad emergente**: las fotos que mandas desde tu WhatsApp salen en todas las pantallas.
+
+```
+        TÚ (administrador)                              AGENCIAS (con licencia)
+  ┌──────────────────────────┐                    ┌───────────────────────────┐
+  │ /#licencias   licencias  │                    │ /            pizarra      │
+  │ /#pizarra-admin  carga   │ ── Supabase ────►  │ /#pantalla   modo TV      │
+  │   resultados y ajustes   │   (tiempo real)    │ solo LECTURA, en vivo     │
+  │ WhatsApp ► webhook ► foto│                    │ + pop-up de publicidad    │
+  └──────────────────────────┘                    └───────────────────────────┘
+```
+
+**Quién hace qué:** tú cargas los resultados **una sola vez**; todas las agencias con licencia activa los ven al instante.
+Las agencias no pueden cargar ni cambiar nada (Supabase lo impide, no solo la pantalla).
+
+## Direcciones
+
+| Dirección | Para quién | Qué muestra |
+|---|---|---|
+| `https://tu-sitio/` | Agencia | Pizarra en solo lectura. Sin licencia activa muestra el bloqueo (o el botón **Enviar petición**). |
+| `https://tu-sitio/#pantalla` | Televisor de la agencia | La misma pizarra, abierta directo en la vista de televisor. |
+| `https://tu-sitio/#licencias` | Tú | Panel: licencias, peticiones, agencias. Pide tu usuario y contraseña. |
+| `https://tu-sitio/#pizarra-admin` | Tú | Pizarra con permiso de escritura: resultados, horarios, triples, logos y banners. |
 
 ## Archivos
 
 | Archivo | Para qué sirve |
 |---|---|
-| `supabase/licenses.sql` | Tablas, políticas de seguridad y la función `check_license`. Se ejecuta una vez en Supabase. |
-| `supabase/requests.sql` | Peticiones de activación (botón «Enviar petición» + aceptar con nombre y duración). Se ejecuta después de `licenses.sql`. |
+| `supabase/licenses.sql` | Licencias, administradores y la función `check_license`. **Se ejecuta primero.** |
+| `supabase/requests.sql` | Peticiones de activación («Enviar petición»). |
+| `supabase/pizarra.sql` | Tabla compartida de la pizarra: resultados, triples, horarios, logos y banners. Lectura para todos, escritura solo administrador. |
+| `supabase/publicidad.sql` | Tabla `anuncios_publicidad` y bucket público `publicidad`. |
+| `supabase/functions/publicidad-webhook/index.ts` | Webhook que recibe la foto desde WhatsApp. Ver `PUBLICIDAD.md`. |
+| `src/App.jsx` | Une todo: rutas, licencia, pizarra y publicidad. |
+| `src/pizarra/` | La pizarra (`pizarra.html`), su conector con Supabase (`frameAdapter.raw.js`), el contenedor `PizarraFrame.jsx` y la puerta de administrador `AdminGate.jsx`. |
+| `src/publicidad/PublicidadPopup.jsx` | El pop-up de publicidad (ya está dentro de `PizarraFrame`). |
+| `src/license/` | Licencias: `LicenseGuard`, `AdminPanel`, servicio y estilos. |
 | `src/lib/supabaseClient.js` | Cliente de Supabase (lee las variables de entorno). |
-| `src/license/licenseService.js` | Toda la comunicación con Supabase y utilidades (fechas, claves). Sin React. |
-| `src/license/useLicenseCheck.js` | Hook que consulta la licencia, repite la consulta y decide qué hacer sin internet. |
-| `src/license/LicenseGuard.jsx` | Envuelve la pizarra; si no hay licencia activa, la oculta y muestra el bloqueo. |
-| `src/license/AdminPanel.jsx` | Panel de administración independiente. |
-| `src/license/license.css` | Estilos (clases `lic-*`, no chocan con tu app). |
-| `src/App.example.jsx` | Ejemplo de cómo conectarlo. Es el único cambio en tu archivo principal. |
 
-## Instalación (10 minutos)
+## Puesta en marcha
 
 1. **Supabase**: crea un proyecto en supabase.com (el plan gratuito basta).
-2. **Base de datos**: en *SQL Editor* pega y ejecuta `supabase/licenses.sql` y después `supabase/requests.sql`.
+2. **Base de datos**: en *SQL Editor* ejecuta, **en este orden**, un archivo a la vez:
+   `licenses.sql` → `requests.sql` → `pizarra.sql` → `publicidad.sql`.
 3. **Tu usuario administrador**:
    - *Authentication > Users > Add user* (tu correo y una contraseña fuerte).
-   - Copia el UUID del usuario.
-   - En el SQL Editor ejecuta: `insert into public.admins (user_id) values ('TU-UUID');`
+   - Copia el UUID del usuario y ejecuta: `insert into public.admins (user_id) values ('TU-UUID');`
 4. **Variables de entorno** (archivo `.env`, o *Secrets* en Google AI Studio):
    - `VITE_SUPABASE_URL` = la URL del proyecto
    - `VITE_SUPABASE_ANON_KEY` = la clave **anon public** (*Project Settings > API*). **Nunca** pongas la `service_role` en el navegador.
-5. **Dependencia**: `npm i @supabase/supabase-js`
-6. **Copia** la carpeta `src/license` y `src/lib/supabaseClient.js` a tu proyecto, y aplica `App.example.jsx` en tu archivo principal.
+5. **Instala y arranca**: `npm install` y `npm run dev` (para publicarlo: `npm run build`).
+6. **WhatsApp**: sigue `PUBLICIDAD.md` (clave secreta, desplegar la función, conectar tu puente).
+7. **Primera prueba**:
+   1. Abre `/#licencias`, inicia sesión y revisa que el panel carga.
+   2. Pulsa **Abrir pizarra (cargar resultados)** y carga un resultado.
+   3. En otra pestaña o en tu TV abre `/`: pulsa **Enviar petición**, acéptala desde el panel y comprueba que la pizarra muestra el resultado.
 
-## Cómo se usa
+## Cómo alquilas el servicio
 
-1. Abre `https://tu-pizarra/#licencias`, inicia sesión y crea la agencia en **Nueva agencia**. Se genera su clave (`AGN-XXXX-XXXX-XXXX-XXXX`).
+1. La agencia abre la dirección en su TV o navegador y pulsa **Enviar petición**.
+2. Tú la aceptas en `/#licencias` con el nombre de la agencia y la duración (7, 15, 30, 60, 90 días, sin vencimiento o una fecha). La pantalla arranca sola en unos segundos.
+3. Si no paga: apagas el interruptor de su fila y su pantalla se bloquea sola en menos de un minuto. **+30 días** renueva al recibir un pago.
+4. Tú cargas los resultados en `/#pizarra-admin`. Todas las pantallas activas los ven en vivo.
+5. Mandas un flyer por WhatsApp y sale como pop-up en todas las pantallas. Con la palabra `borrar` reemplaza los anteriores.
+
+### Los resultados son globales
+Los resultados, los horarios y la configuración de triples los define el administrador y son **los mismos para todas las agencias**.
+Cada agencia sí puede personalizar **en su propio equipo** el tamaño, los colores y el tema (botón *Personalizar*); eso no afecta a las demás.
+
+## Licencias: detalle
+
+1. Abre `https://tu-sitio/#licencias`, inicia sesión y crea la agencia en **Nueva agencia**. Se genera su clave (`AGN-XXXX-XXXX-XXXX-XXXX`).
 2. **Activar la pantalla del cliente** (elige la forma que le quede más cómoda):
 
    | Dispositivo | Forma | Pasos |
@@ -98,8 +141,10 @@ Las horas de tolerancia (`graceHours`) y el intervalo de consulta (`pollMs`, 60 
 
 ## Límites que conviene conocer
 
-- **Es un bloqueo del lado del navegador.** Una persona técnica podría modificar el código en su equipo y saltarse la pantalla de bloqueo. Detiene el uso normal y la reventa casual. Si más adelante quieres un control más fuerte, los datos de la pizarra (resultados) tendrían que pedirse a Supabase solo con una licencia activa, validando la clave en las políticas de esa tabla.
+- **El bloqueo por licencia es del lado del navegador.** Una persona técnica podría modificar el código en su equipo y saltarse la pantalla de bloqueo. Detiene el uso normal y la reventa casual.
+- **Los resultados de la pizarra son legibles con la clave pública.** Para que la pizarra funcione en cualquier TV, la tabla `pizarra_datos` se puede leer sin iniciar sesión. Quien conozca la dirección de Supabase y su clave pública podría leer los resultados sin licencia. Escribir sí está protegido de verdad: solo administradores. Si algún día quieres cerrar la lectura, los resultados tendrían que pedirse solo con una licencia válida (con otra función en la base de datos y sin tiempo real directo).
 - **El panel de administración sí está protegido de verdad**: aunque alguien lo modifique en su navegador, Supabase solo entrega o cambia datos si el usuario está en `admins`.
+- **La publicidad de WhatsApp** solo la puede crear quien conozca la clave secreta del webhook. Guárdala como secreto y no la compartas.
 - Usa una contraseña fuerte para tu usuario administrador y activa la verificación en dos pasos de tu cuenta de Supabase.
 
 ## Pruebas realizadas
@@ -108,3 +153,11 @@ Las horas de tolerancia (`graceHours`) y el intervalo de consulta (`pollMs`, 60 
 - **Componentes (navegador real, Supabase simulado)**: 62 pruebas en total, entre ellas el bloqueo exacto a pantalla completa, la pizarra fuera del DOM, la tolerancia sin internet, el bloqueo y desbloqueo con la pizarra abierta, la activación por URL, y el toggle, creación, +30 días, borrado y reversión del panel.
 - **Peticiones de activación**: SQL en PostgreSQL 16 real (enviar, reenviar sin duplicar, pendiente/aceptada/rechazada, la clave se entrega una sola vez y funciona en `check_license`, agencia existente sin crear otra, `anon` y usuario normal no pueden ver, aceptar ni rechazar, tope de 200, limpieza a los 7 días, migración desde la versión por código) y pruebas de componentes (el botón y el foco para el control remoto, no envía nada solo, recarga con petición guardada, rechazada, cancelar, sin internet al enviar y mientras espera; la bandeja con duración, fecha de corte exacta, agencia existente, rechazo en dos pasos y errores claros).
 - **No probado**: la conexión contra un proyecto de Supabase real (no tengo acceso a uno desde aquí). Tras el paso 3, prueba iniciar sesión en `#licencias` y crear una agencia.
+- **Proyecto unido (pizarra + licencias + publicidad)**:
+  - SQL de `pizarra.sql` en PostgreSQL 16 real: lectura para `anon`, escritura solo del administrador (insertar, actualizar y borrar rechazados para otros), colecciones, identificadores y tamaño validados, repetible.
+  - Navegador real con Supabase simulado, dos pestañas (administrador y agencia): 25 pruebas. Licencia suspendida (bloqueo y la pizarra ni se monta); `#pizarra-admin` sin sesión; el administrador carga un animalito y un triple y quedan en `pizarra_datos`; la agencia los ve, no ve botones de administración, no puede abrir el selector, y un intento de escribir es rechazado; **un resultado nuevo llega en vivo a la agencia sin recargar**; pantalla completa sobre el contenedor (así el pop-up se ve en el TV); el pop-up aparece, se cierra con un clic, un cartel nuevo sale pronto y al desactivar todos desaparece; `#pantalla` abre la vista de televisor; sin errores de JavaScript.
+  - Pop-up por separado (reloj acelerado): 16 pruebas. Webhook: 31 pruebas.
+- **No probado**:
+  - La conexión contra un proyecto de Supabase real (no tengo acceso a uno desde aquí).
+  - Ningún puente de WhatsApp real (Make.com o Evolution API).
+  - El `npm run build` final con Vite: en el entorno donde lo preparé no se podían instalar paquetes, así que lo probé con otro empaquetador. Si `npm run build` da algún error al instalarlo, avísame con el texto del error.
